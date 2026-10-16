@@ -196,6 +196,11 @@ def a_temps_egal(data, colonne, groupes="tranche_10min"):
     return data[colonne] - data.groupby(groupes)[colonne].transform("mean") + data[colonne].mean()
 
 
+def correlation_rangs(a, b):
+    """Corrélation de Spearman (de −1 à 1), calculée sur les rangs : même résultat, sans dépendre de scipy."""
+    return float(a.rank().corr(b.rank()))
+
+
 def lien_a_temps_egal(data, colonne, cible=STRESS):
     rx, ry = data[colonne].rank(pct=True), data[cible].rank(pct=True)
     rx = rx - rx.groupby(data["tranche_10min"]).transform("mean")
@@ -207,7 +212,8 @@ def lien_a_temps_egal(data, colonne, cible=STRESS):
 def calculer():
     # Colonnes texte lues directement en catégories : même contenu, beaucoup moins de mémoire (utile en ligne)
     apercu = pd.read_csv(FICHIER, nrows=1000)
-    df = pd.read_csv(FICHIER, dtype={c: "category" for c in apercu.select_dtypes("object").columns})
+    texte = [c for c in apercu.columns if not pd.api.types.is_numeric_dtype(apercu[c]) and not pd.api.types.is_bool_dtype(apercu[c])]
+    df = pd.read_csv(FICHIER, dtype={c: "category" for c in texte})
     r = {"n": len(df), "n_colonnes": df.shape[1], "manquants": int(df.isna().sum().sum()),
          "doublons": int(df.duplicated(subset=[c for c in df.columns if c != "user_id"]).sum()),
          "doublons_id": int(df["user_id"].duplicated().sum())}
@@ -297,9 +303,9 @@ def calculer():
                             sport_heures_semaine=("exercise_hours_per_week", "mean"))
     noms_vie = (("sleep_hours_per_night", "Sommeil"), ("daily_steps_count", "Pas par jour"), ("exercise_hours_per_week", "Sport"))
     r["correlations_vie"] = pd.DataFrame({
-        "lien avec le temps passé": {nom: df[c].corr(df[TEMPS], method="spearman") for c, nom in noms_vie},
-        "lien avec le stress": {nom: df[c].corr(df[STRESS], method="spearman") for c, nom in noms_vie},
-        "lien avec le bonheur": {nom: df[c].corr(df[BONHEUR], method="spearman") for c, nom in noms_vie}})
+        "lien avec le temps passé": {nom: correlation_rangs(df[c], df[TEMPS]) for c, nom in noms_vie},
+        "lien avec le stress": {nom: correlation_rangs(df[c], df[STRESS]) for c, nom in noms_vie},
+        "lien avec le bonheur": {nom: correlation_rangs(df[c], df[BONHEUR]) for c, nom in noms_vie}})
     r["pas_bornes"] = (df["daily_steps_count"].quantile(0.01), df["daily_steps_count"].quantile(0.99))
     df["stress_temps_egal"] = a_temps_egal(df, STRESS)
     df["bonheur_temps_egal"] = a_temps_egal(df, BONHEUR)
@@ -328,7 +334,7 @@ def calculer():
                 "time_on_feed_per_day": "Temps sur le fil", "time_on_reels_per_day": "Temps sur les Reels",
                 "comments_written_per_day": "Commentaires", "dms_received_per_week": "Messages reçus",
                 "ads_viewed_per_day": "Publicités vues", "sessions_per_day": "Sessions par jour"}
-    r["copies"] = pd.Series({nom: df[c].corr(df[TEMPS], method="spearman") for c, nom in activite.items()},
+    r["copies"] = pd.Series({nom: correlation_rangs(df[c], df[TEMPS]) for c, nom in activite.items()},
                             name="corrélation avec le temps passé").to_frame()
 
     # --- 3. Âge
@@ -358,8 +364,8 @@ def calculer():
                                                        "différence (%)", "différence à temps égal (%)"]).set_index("comportement")
     r["n_moins_plus"] = (int(df["tres_malheureux"].sum()), int(df["tres_heureux"].sum()))
     df["interactions_par_minute"] = (df["likes_given_per_day"] + df["comments_written_per_day"]) / df[TEMPS]
-    r["engagement_liens"] = (float(df["user_engagement_score"].corr(df[TEMPS], method="spearman")),
-                             float(df["user_engagement_score"].corr(df["interactions_par_minute"], method="spearman")))
+    r["engagement_liens"] = (correlation_rangs(df["user_engagement_score"], df[TEMPS]),
+                             correlation_rangs(df["user_engagement_score"], df["interactions_par_minute"]))
 
     df["profil_publication"] = pd.cut(df["posts_created_per_week"], [-1, 3, 7, 1000], labels=PROFILS_PUBLICATION)
     df["bonheur_temps_age_egaux"] = a_temps_egal(df, BONHEUR, "tranche_10min_age")
