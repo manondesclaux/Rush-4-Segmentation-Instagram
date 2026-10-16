@@ -1,0 +1,4 @@
+# Bibliothèques nécessaires à l'application
+pandas
+numpy
+streamlit
