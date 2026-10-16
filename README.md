@@ -18,6 +18,8 @@ Bootcamp Data · Epitech
 | `notebook_Instagram_final.ipynb` | Le notebook complet : choix des données, exploration, variables construites, segmentation, évaluation selon nos critères, limites et protection des données. Il s'exécute de bout en bout et produit des résultats identiques à chaque exécution. |
 | `notebook_Instagram_final.py` | La même analyse en application Streamlit interactive, avec un simulateur qui place un nouvel utilisateur dans son segment. |
 
+**Application en ligne :** [notebookinstagramfinal.streamlit.app](https://notebookinstagramfinal.streamlit.app)
+
 ## Résultats clés
 
 - **Le temps passé chaque jour est le facteur central** : il explique 71 % des écarts de stress (environ +5,4 points par heure, sur une échelle de 0 à 40) et 16 % des écarts de bonheur, qui chute surtout aux deux extrêmes.
@@ -83,7 +85,7 @@ L'application s'ouvre dans le navigateur à l'adresse `http://localhost:8501`.
 | Membre | Responsabilités |
 |---|---|
 | Jordy | Travail commun |
-| Manon D. | Travail commun |
+| Manon D. | Travail commun · oral |
 | Manon R. | Travail commun · application Streamlit |
 | Mina | Travail commun · présentation finale |
 | Tom | Travail commun |
