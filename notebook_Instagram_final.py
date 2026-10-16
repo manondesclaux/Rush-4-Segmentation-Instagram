@@ -457,7 +457,7 @@ def segment_vers_court(index):
 # ---------------------------------------------------------------------------
 def page_introduction():
     st.title("Segmentation des utilisateurs d'Instagram : usage et bien-être")
-    st.caption("Rush 4 · Bootcamp Data · livrable final")
+    st.caption("Rush 4 · Bootcamp Data · livrable final · version interactive du notebook notebook_Instagram_final.ipynb")
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Utilisateurs", fr(R["n"], 0))
     c2.metric("Stress expliqué", f"{fr(R['r2_stress'] * 100, 0)} %",
@@ -1115,7 +1115,7 @@ def page_protection():
     st.markdown("""
 - **Seuil de 100 utilisateurs :** aucune ligne individuelle ni aucun groupe de moins de 100 personnes n'est affiché.
 - **Données brutes jamais publiées :** le dossier `data/` est exclu du dépôt du projet par le fichier `.gitignore` ; seule la copie qui sert à l'application en ligne se trouve dans un dépôt privé.
-- **Une section « Limites et protection des données »** dans l'application et dans le README.
+- **Une section « Limites et protection des données »** dans le notebook, l'application et le README.
 - **Interdiction écrite** d'utiliser les segments pour la publicité ou de les transmettre aux annonceurs.
 - **Informer les utilisateurs** du classement en segments, dans la politique de confidentialité.
 - **Inscrire le traitement au registre des traitements**, avec sa finalité, les données utilisées et la durée de conservation.
