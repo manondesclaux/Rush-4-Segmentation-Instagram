@@ -205,9 +205,11 @@ def lien_a_temps_egal(data, colonne, cible=STRESS):
 
 @st.cache_data(show_spinner="Calcul des résultats…")
 def calculer():
-    df = pd.read_csv(FICHIER)
+    # Colonnes texte lues directement en catégories : même contenu, beaucoup moins de mémoire (utile en ligne)
+    apercu = pd.read_csv(FICHIER, nrows=1000)
+    df = pd.read_csv(FICHIER, dtype={c: "category" for c in apercu.select_dtypes("object").columns})
     r = {"n": len(df), "n_colonnes": df.shape[1], "manquants": int(df.isna().sum().sum()),
-         "doublons": int(df.drop(columns="user_id").duplicated().sum()),
+         "doublons": int(df.duplicated(subset=[c for c in df.columns if c != "user_id"]).sum()),
          "doublons_id": int(df["user_id"].duplicated().sum())}
 
     # --- Nettoyage : incohérences métier (signalées, pas supprimées)
@@ -225,7 +227,7 @@ def calculer():
     }, index=list(drapeaux.columns)).rename_axis("indicateur")
     signalees = drapeaux.any(axis=1)
     r["part_signalees"] = float(signalees.mean() * 100)
-    propre = df[~signalees]
+    propre = df.loc[~signalees, [TEMPS, STRESS]]
     moyenne_propre = propre.groupby(propre[TEMPS] // 10)[STRESS].transform("mean")
     r["r2_sans_signalees"] = float(1 - ((propre[STRESS] - moyenne_propre) ** 2).sum() / ((propre[STRESS] - propre[STRESS].mean()) ** 2).sum())
     r["inutiles"] = pd.DataFrame({
@@ -237,9 +239,18 @@ def calculer():
     # --- Choix du fichier
     r["comparaison"] = None
     if FICHIER_AUTRE.exists():
-        autre = pd.read_csv(FICHIER_AUTRE)
-        differences = pd.Series({c: int((df[c].astype(str) != autre[c].astype(str)).sum()) for c in autre.columns})
+        # L'autre version est lue par blocs de colonnes, pour ne jamais garder deux fichiers entiers en mémoire
+        colonnes_autre = list(pd.read_csv(FICHIER_AUTRE, nrows=0).columns)
+        comptes = {}
+        for debut in range(0, len(colonnes_autre), 12):
+            bloc = colonnes_autre[debut:debut + 12]
+            morceau = pd.read_csv(FICHIER_AUTRE, usecols=bloc)
+            for c in bloc:
+                comptes[c] = int((df[c].astype(str) != morceau[c].astype(str)).sum())
+            del morceau
+        differences = pd.Series(comptes).reindex(colonnes_autre)
         mineurs = df["age"] < 18
+        autre = pd.read_csv(FICHIER_AUTRE, usecols=["employment_status", "weekly_work_hours"])
         utilisees = [STRESS, BONHEUR, TEMPS, "age", "sleep_hours_per_night", "daily_steps_count", "exercise_hours_per_week",
                      "sessions_per_day", "average_session_length_minutes", "likes_given_per_day", "comments_written_per_day",
                      "posts_created_per_week", "dms_sent_per_week", "privacy_setting_level", "country"]
@@ -254,7 +265,7 @@ def calculer():
                     "part déclarée salariée à temps plein (%)": (autre.loc[mineurs, "employment_status"] == "Full-time employed").mean() * 100,
                     "heures de travail par semaine (moyenne)": autre.loc[mineurs, "weekly_work_hours"].mean()}}),
             "n_mineurs": int(mineurs.sum()),
-            "utilisees_identiques": all(df[c].astype(str).equals(autre[c].astype(str)) for c in utilisees),
+            "utilisees_identiques": bool((differences[utilisees] == 0).all()),
         }
         del autre
 
@@ -321,7 +332,7 @@ def calculer():
                             name="corrélation avec le temps passé").to_frame()
 
     # --- 3. Âge
-    r["age_s4"] = agreger(df[df["segment"] == "S4 Soutenu"], "tranche_age", minutes=(TEMPS, "mean"), stress=(STRESS, "mean"))
+    r["age_s4"] = agreger(df.loc[df["segment"] == "S4 Soutenu", ["tranche_age", TEMPS, STRESS]], "tranche_age", minutes=(TEMPS, "mean"), stress=(STRESS, "mean"))
     r["grille_age"] = agreger(df, ["tranche_age", "segment"], stress=(STRESS, "mean"))
     ecart = df[STRESS] - df.groupby("tranche_10min")[STRESS].transform("mean")
     r["pente_age"] = float(np.polyfit(df["age"], ecart, 1)[0] * 10)
@@ -363,7 +374,7 @@ def calculer():
 
     df["part_privee"] = (df["dms_sent_per_week"] / 7) / (df["dms_sent_per_week"] / 7 + df["likes_given_per_day"] + df["comments_written_per_day"]) * 100
     df["quintile_prive"] = pd.qcut(df["part_privee"].rank(method="first"), 5, labels=QUINTILES)
-    vers_90 = df[(df[TEMPS] >= 75) & (df[TEMPS] <= 105)]
+    vers_90 = df.loc[(df[TEMPS] >= 75) & (df[TEMPS] <= 105), ["quintile_prive", "privacy_setting_level", STRESS, BONHEUR]]
     r["n_vers_90"] = len(vers_90)
     prive = {}
     for groupe, ordre in (("quintile_prive", QUINTILES), ("privacy_setting_level", list(COMPTES))):
@@ -384,10 +395,11 @@ def calculer():
     reflexe = (df["sessions_per_day"] > mediane_sessions) & (df["average_session_length_minutes"] < mediane_duree)
     immersion = (df["sessions_per_day"] < mediane_sessions) & (df["average_session_length_minutes"] > mediane_duree)
     df["profil_connexion"] = np.select([reflexe, immersion], ["Réflexe", "Immersion"], default="Autre")
-    connexion = agreger(df[df["profil_connexion"] != "Autre"], "profil_connexion", sessions=("sessions_per_day", "mean"),
+    colonnes_connexion = ["profil_connexion", "sessions_per_day", "average_session_length_minutes", TEMPS, STRESS, BONHEUR]
+    connexion = agreger(df.loc[df["profil_connexion"] != "Autre", colonnes_connexion], "profil_connexion", sessions=("sessions_per_day", "mean"),
                         duree=("average_session_length_minutes", "mean"), minutes=(TEMPS, "mean"),
                         stress=(STRESS, "mean"), bonheur=(BONHEUR, "mean")).reindex(["Réflexe", "Immersion"])
-    meme_temps = df[(df[TEMPS] >= 120) & (df[TEMPS] < 180) & (df["profil_connexion"] != "Autre")]
+    meme_temps = df.loc[(df[TEMPS] >= 120) & (df[TEMPS] < 180) & (df["profil_connexion"] != "Autre"), colonnes_connexion]
     connexion_meme_temps = agreger(meme_temps, "profil_connexion", minutes=(TEMPS, "mean"), stress=(STRESS, "mean"),
                                    bonheur=(BONHEUR, "mean")).reindex(["Réflexe", "Immersion"])
     r["connexion"] = connexion
@@ -400,7 +412,7 @@ def calculer():
     r["segments"] = segments
     grille = segments["part_stress_eleve"].unstack("segment")
     moitie = np.where(df["user_id"] % 2 == 0, "A", "B")
-    stabilite = (df.assign(moitie=moitie).groupby(["moitie", "groupe_age", "segment"], observed=True)["stress_eleve"]
+    stabilite = (df.groupby([pd.Series(moitie, index=df.index, name="moitie"), "groupe_age", "segment"], observed=True)["stress_eleve"]
                  .mean().mul(100).unstack("moitie"))
     ecarts_age = grille.max() - grille.min()
     r["criteres"] = pd.DataFrame([
@@ -436,7 +448,7 @@ def calculer():
     r["corr_globale"] = float(df[STRESS].corr(df[BONHEUR]))
     r["corr_temps_egal"] = float(np.corrcoef(residu(STRESS), residu(BONHEUR))[0, 1])
     niveau_bonheur = pd.cut(df[BONHEUR], [0, 2, 4, 6, 8, 10], labels=["1–2", "3–4", "5–6", "7–8", "9–10"])
-    r["lien_cache"] = agreger(df[df["segment"] == "S3 Modéré"].assign(niveau_bonheur=niveau_bonheur),
+    r["lien_cache"] = agreger(df.loc[df["segment"] == "S3 Modéré", [STRESS]].assign(niveau_bonheur=niveau_bonheur),
                               "niveau_bonheur", stress_moyen=(STRESS, "mean"))
     return r
 
