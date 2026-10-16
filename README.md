@@ -78,6 +78,18 @@ L'application s'ouvre dans le navigateur à l'adresse `http://localhost:8501`.
 4. **Segmentation par paliers** plutôt qu'un regroupement automatique, car les variables d'usage sont presque toutes des copies du temps passé.
 5. **Évaluation** selon six critères vérifiés sur les données : discrimination, apport au-delà du temps seul, applicabilité à tout utilisateur, stabilité, absence de petits groupes, absence de données de santé.
 
+## Équipe et répartition du travail
+
+| Membre | Responsabilités |
+|---|---|
+| Jordy | Travail commun |
+| Manon D. | Travail commun |
+| Manon R. | Travail commun · application Streamlit |
+| Mina | Travail commun · présentation finale |
+| Tom | Travail commun |
+
+**Travail commun** (toute l'équipe) : nettoyage et choix des données, exploration et tests des hypothèses, analyse du lien entre l'usage et le bien-être, segmentation et critères d'évaluation, protection des données et limites, rédaction du notebook.
+
 ## Protection des données et limites
 
 - Aucune ligne individuelle ni aucun groupe de moins de 100 utilisateurs n'est affiché.
