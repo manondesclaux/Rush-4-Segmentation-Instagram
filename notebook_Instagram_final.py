@@ -561,7 +561,7 @@ def calculer():
         ("3. S'applique à tout utilisateur", "valeurs manquantes dans l'âge et le temps passé",
          str(int(df[["age", TEMPS]].isna().sum().sum()))),
         ("4. Est stable", "plus grand écart entre deux moitiés du fichier",
-         f"{fr((stabilite['A'] - stabilite['B']).abs().max(), 1)} points"),
+         f"{fr((stabilite['A'] - stabilite['B']).abs().max(), 1)} point{'s' if round((stabilite['A'] - stabilite['B']).abs().max(), 1) >= 2 else ''}"),
         ("5. N'isole personne", "plus petit segment",
          f"{fr(df.groupby(['groupe_age', 'segment'], observed=True).size().min(), 0)} utilisateurs"),
         ("6. Aucune donnée de santé", "variables utilisées", "âge et temps passé par jour"),
