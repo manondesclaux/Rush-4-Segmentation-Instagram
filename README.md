@@ -24,7 +24,7 @@ Bootcamp Data · Epitech
 
 - **Le temps passé chaque jour est le facteur central** : il explique 71 % des écarts de stress (environ +5,4 points par heure, sur une échelle de 0 à 40) et 16 % des écarts de bonheur, qui chute surtout aux deux extrêmes.
 - **L'âge change ce lien** : les plus jeunes passent plus de temps sur Instagram, mais à temps égal, les plus âgés sont plus stressés (+1,2 point par tranche de 10 ans).
-- **Les habitudes d'utilisation n'ajoutent rien au temps passé** : intensité des actions, création ou consommation de contenu, activité privée ou publique, connexions courtes ou longues.
+- **Les moins heureux et les plus stressés ont un usage plus intensif** : plus de temps passé, plus d'actions, plus de publications, une activité plus publique et des connexions plus fréquentes.
 - **Le sommeil, l'activité physique et le pays ne sont pas liés** à l'usage dans le panel.
 - **Segmentation retenue** : 6 segments de temps passé (S1 à S6) croisés avec 4 groupes d'âge, soit 24 segments construits sans aucune donnée de santé.
 

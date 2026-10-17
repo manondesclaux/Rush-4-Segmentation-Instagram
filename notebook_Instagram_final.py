@@ -16,6 +16,15 @@ import pandas as pd
 import streamlit as st
 
 st.set_page_config(page_title="Rush 4 · Instagram et bien-être", layout="wide")
+st.markdown("""<style>
+#MainMenu, footer, [data-testid="stDecoration"], [data-testid="stAppDeployButton"] {display: none !important;}
+.block-container {max-width: 1180px; padding-top: 2.4rem; padding-bottom: 3rem;}
+h1 {font-weight: 700 !important; letter-spacing: -0.015em;}
+.accroche {font-size: 1.08rem; color: #52514e; margin-top: -0.5rem; margin-bottom: 1.4rem;}
+[data-testid="stMetricValue"] {font-weight: 600;}
+[data-testid="stMetricLabel"], [data-testid="stMetricLabel"] * {white-space: normal !important; overflow: visible !important;
+    text-overflow: clip !important; height: auto !important;}
+</style>""", unsafe_allow_html=True)
 
 # ---------------------------------------------------------------------------
 # Constantes
@@ -48,7 +57,8 @@ PAYS = {"United States": "États-Unis", "India": "Inde", "Brazil": "Brésil", "O
 SURFACE = "#fcfcfb"
 INK, INK2, MUTED = "#0b0b0b", "#52514e", "#898781"
 GRID, AXIS = "#e1e0d9", "#c3c2b7"
-BLEU, ORANGE, AQUA = "#2a78d6", "#eb6834", "#1baf7a"
+BLEU, ORANGE, AQUA, ROUGE = "#2a78d6", "#eb6834", "#1baf7a", "#e34948"
+BLEU_CLAIR, ROUGE_CLAIR = "#95bbea", "#f1a4a4"
 RAMPE_4 = ["#86b6ef", "#3987e5", "#1c5cab", "#0d366b"]
 SEQ = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"]
 
@@ -119,12 +129,39 @@ AXE_HEURES = alt.Axis(values=list(range(0, 9)), labelExpr="datum.value + ' h'", 
 AXE_POURCENT = alt.Axis(labelExpr="datum.value + ' %'")
 
 
+_CADRE = {"border": True} if "border" in inspect.signature(st.container).parameters else {}
+_BORDURE_INDICATEUR = {"border": True} if "border" in inspect.signature(st.metric).parameters else {}
+
+
+def encadre(etiquette, texte, couleur="blue"):
+    with st.container(**_CADRE):
+        st.markdown(f":{couleur}[**{etiquette}**]  \n{texte}")
+
+
 def retenir(texte):
-    st.success(f"**Ce qu'on retient :** {texte}")
+    encadre("Ce qu'on retient", texte)
 
 
 def conclusion_produit(texte):
-    st.info(f"**Conclusion pour les équipes produit :** {texte}")
+    encadre("Pour les équipes produit", texte, couleur="orange")
+
+
+def entete(texte, accroche):
+    st.title(texte)
+    st.markdown(f'<p class="accroche">{accroche}</p>', unsafe_allow_html=True)
+
+
+def indicateurs(*elements):
+    """Rangée de chiffres clés : (libellé, valeur, aide ou None)."""
+    for colonne, (libelle, valeur, aide) in zip(st.columns(len(elements)), elements):
+        colonne.metric(libelle, valeur, help=aide, **_BORDURE_INDICATEUR)
+
+
+def points(valeur):
+    """Écart en points, avec son signe : « +10,2 points », « −1,0 point »."""
+    arrondi = round(valeur, 1)
+    signe = "+" if arrondi > 0 else ""
+    return f"{signe}{fr(valeur, 1)} point{'s' if abs(arrondi) >= 2 else ''}"
 
 
 def barres_simples(data, x, y, etiquette, titre_graphique, x_titre, y_titre, ordre, domaine_y,
@@ -376,7 +413,14 @@ def calculer():
                         bonheur_egal=("bonheur_temps_age_egaux", "mean"), stress_egal=("stress_temps_age_egaux", "mean"))
     createurs.insert(1, "part", createurs["n"] / len(df) * 100)
     r["createurs"] = createurs
-    r["publications_age"] = agreger(df, "tranche_age", publications=("posts_created_per_week", "mean"))
+    noms_cc = {"Consommateur (0 à 3 publications)": "Consommateurs", "Créateur (8 et plus)": "Créateurs"}
+    profil_cc = df["profil_publication"].map(noms_cc)
+    masque_cc = profil_cc.notna()
+    cc = pd.DataFrame({"profil": profil_cc[masque_cc].astype(str), "segment": df.loc[masque_cc, "segment"],
+                       STRESS: df.loc[masque_cc, STRESS], BONHEUR: df.loc[masque_cc, BONHEUR]})
+    r["createurs_segments"] = agreger(cc, ["profil", "segment"], bonheur=(BONHEUR, "mean"), stress=(STRESS, "mean"))
+    r["createurs_repartition"] = (pd.crosstab(cc["profil"], cc["segment"], normalize="index").mul(100)[SEGMENTS]
+                                  .reindex(["Consommateurs", "Créateurs"]))
 
     df["part_privee"] = (df["dms_sent_per_week"] / 7) / (df["dms_sent_per_week"] / 7 + df["likes_given_per_day"] + df["comments_written_per_day"]) * 100
     df["quintile_prive"] = pd.qcut(df["part_privee"].rank(method="first"), 5, labels=QUINTILES)
@@ -393,6 +437,9 @@ def calculer():
             "bonheur_temps_egal": df.groupby(groupe, observed=True)["bonheur_temps_egal"].mean(),
             "bonheur_vers_90": vers_90.groupby(groupe, observed=True)[BONHEUR].mean(),
             "n_vers_90": vers_90.groupby(groupe, observed=True).size(),
+            "likes": df.groupby(groupe, observed=True)["likes_given_per_day"].mean(),
+            "commentaires": df.groupby(groupe, observed=True)["comments_written_per_day"].mean(),
+            "messages": df.groupby(groupe, observed=True)["dms_sent_per_week"].mean(),
         }).reindex(ordre)
     prive["privacy_setting_level"].index = [COMPTES[c] for c in prive["privacy_setting_level"].index]
     r["prive"] = prive
@@ -474,15 +521,13 @@ def segment_vers_court(index):
 # Pages
 # ---------------------------------------------------------------------------
 def page_introduction():
-    st.title("Segmentation des utilisateurs d'Instagram : usage et bien-être")
-    st.caption("Rush 4 · Bootcamp Data · livrable final · version interactive du notebook notebook_Instagram_final.ipynb")
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Utilisateurs", fr(R["n"], 0))
-    c2.metric("Stress expliqué", f"{fr(R['r2_stress'] * 100, 0)} %",
-              help="Part des écarts de stress entre utilisateurs expliquée par le temps passé sur Instagram")
-    c3.metric("Stress par heure", f"+{fr(R['pente'])}",
-              help="Points de stress (sur 40) en plus pour chaque heure passée sur Instagram")
-    c4.metric("Segments", f"{len(R['segments'])}", help="6 segments de temps passé × 4 groupes d'âge")
+    entete("Segmentation des utilisateurs d'Instagram : usage et bien-être", "Rush 4 · Bootcamp Data · Epitech")
+    indicateurs(("Utilisateurs analysés", fr(R["n"], 0), None),
+                ("Stress expliqué par le temps passé", f"{fr(R['r2_stress'] * 100, 0)} %",
+                 "Part des écarts de stress entre utilisateurs expliquée par le temps passé sur Instagram"),
+                ("Stress en plus par heure", f"+{fr(R['pente'])} pt",
+                 "Points de stress, sur une échelle de 0 à 40, pour chaque heure passée sur Instagram"),
+                ("Segments", str(len(R["segments"])), "6 segments de temps passé × 4 groupes d'âge"))
 
     st.header("Objectif")
     st.markdown("""
@@ -494,632 +539,653 @@ Le département Innovation d'Instagram nous demande de **livrer une segmentation
 - est **utilisable par les équipes produit** ;
 - est **défendue devant un jury**.
 """)
-    st.header("Le contexte")
+    st.header("Contexte")
     st.markdown("""
-Les réseaux sociaux doivent prouver qu'ils ne nuisent pas à leurs utilisateurs : les régulateurs posent des questions, la presse publie des études et les annonceurs ne veulent pas être associés à une plateforme qui rend les gens malheureux. Instagram veut **sa propre réponse, fondée sur ses propres données**.
-
-- Les données de **bien-être et de santé** (stress, bonheur, sommeil…) viennent d'un **panel de volontaires** qui ont accepté une étude bien-être.
+Les réseaux sociaux doivent prouver qu'ils ne nuisent pas à leurs utilisateurs. Instagram veut **sa propre réponse, fondée sur ses propres données**.
+- Les données de **bien-être** (stress, bonheur, sommeil…) viennent d'un **panel de volontaires** qui ont accepté une étude bien-être.
 - Les données d'**usage** (temps passé, sessions, likes…) et de **profil** (âge, pays…) existent pour **tous** les utilisateurs.
-- Nous travaillons sur une **réplique synthétique** du panel, fournie par l'équipe vie privée. Nos recommandations, elles, s'appliqueront à de vrais utilisateurs.
+- Nous travaillons sur une **réplique synthétique** du panel ; nos recommandations s'appliqueront à de vrais utilisateurs.
 """)
     st.header("Définitions")
     st.markdown("""
-- **Bien-être :** l'Organisation mondiale de la santé définit la santé comme « un état de complet bien-être physique, mental et social », qui ne se réduit pas à l'absence de maladie ([constitution de l'OMS](https://www.who.int/fr/about/governance/constitution)). La santé mentale y est décrite comme un état de bien-être qui permet notamment de surmonter les tensions normales de la vie ([Santé publique France, sante.fr](https://www.sante.fr/toutes-et-tous-une-sante-mentale)). Nous mesurons le bien-être avec **deux indicateurs** : le stress et le bonheur.
-- **Bonheur :** une **auto-évaluation** de sa propre vie sur une échelle, comme l'échelle de Cantril (de 0 à 10) utilisée par le [World Happiness Report](https://www.worldhappiness.report/faq/). Dans nos données, le **bonheur déclaré** (`self_reported_happiness`) va de 1 à 10.
-- **Stress :** le **stress perçu** (`perceived_stress_score`) va de 0 à 40. C'est la plage de l'échelle **PSS-10**, sans que la documentation le confirme. On considère le stress comme **élevé à partir de 27**, une convention de lecture courante et non un seuil de diagnostic ([guide de cotation, NovoPsych](https://novopsych.com.au/wp-content/uploads/2022/02/pss-10-report-PDF.pdf)).
-- **Plus heureux / moins heureux :** les utilisateurs au bonheur de **9 ou 10** (20 % des utilisateurs) et de **1 ou 2** (20 % des utilisateurs).
+- **Bien-être :** l'OMS définit la santé comme « un état de complet bien-être physique, mental et social » ([constitution de l'OMS](https://www.who.int/fr/about/governance/constitution)) ; la santé mentale est un état de bien-être qui permet notamment de surmonter les tensions normales de la vie ([sante.fr](https://www.sante.fr/toutes-et-tous-une-sante-mentale)). Nous le mesurons avec **deux indicateurs** : le stress et le bonheur.
+- **Bonheur :** une **auto-évaluation** de sa propre vie sur une échelle, comme l'échelle de Cantril utilisée par le [World Happiness Report](https://www.worldhappiness.report/faq/). Ici, le **bonheur déclaré** va de 1 à 10.
+- **Stress :** le **stress perçu** va de 0 à 40, la plage de l'échelle **PSS-10** (sans que la documentation le confirme). Il est considéré comme **élevé à partir de 27**, une convention de lecture et non un seuil de diagnostic ([NovoPsych](https://novopsych.com.au/wp-content/uploads/2022/02/pss-10-report-PDF.pdf)).
+- **Plus heureux / moins heureux :** bonheur de **9 ou 10** et de **1 ou 2** (20 % des utilisateurs chacun).
 """)
-    st.header("Les règles suivies")
+    st.header("Règles d'analyse")
     st.markdown("""
-- **Aucune donnée individuelle n'est affichée** : seulement des moyennes de groupes, et jamais un groupe de **moins de 100 utilisateurs**.
+- **Aucune donnée individuelle n'est affichée** : seulement des moyennes de groupes d'au moins **100 utilisateurs**.
 - **Résultats identiques à chaque exécution** : aucun tirage aléatoire.
-- **« À temps égal »** : on compare des utilisateurs qui passent le même temps sur Instagram (par tranches de 10 minutes). C'est ce qui permet de savoir si une habitude compte **en plus** du temps passé.
+- **« À temps égal »** : on compare des utilisateurs qui passent le même temps sur Instagram (par tranches de 10 minutes), pour savoir si une habitude compte **en plus** du temps passé.
 - **Ce sont des corrélations**, pas des preuves de cause à effet.
-
-Utilisez le menu à gauche pour parcourir les parties.
 """)
 
 
 def page_donnees():
-    st.title("0 · Nettoyage et données")
+    entete("0 · Nettoyage et données", "Vérifier la qualité des données, choisir le bon fichier et construire les variables utiles.")
+    indicateurs(("Utilisateurs", fr(R["n"], 0), None), ("Colonnes", str(R["n_colonnes"]), None),
+                ("Valeurs manquantes", str(R["manquants"]), None), ("Doublons", str(R["doublons"] + R["doublons_id"]), None))
+    onglet_nettoyage, onglet_fichier, onglet_variables = st.tabs(["Incohérences", "Choix du fichier", "Variables construites"])
 
-    st.header("Contrôles de base")
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Utilisateurs", fr(R["n"], 0))
-    c2.metric("Colonnes", str(R["n_colonnes"]))
-    c3.metric("Valeurs manquantes", str(R["manquants"]))
-    c4.metric("Doublons", str(R["doublons"] + R["doublons_id"]))
-
-    st.header("Incohérences métier : signalées, pas supprimées")
-    c1, c2 = st.columns([1, 2])
-    c1.metric("Lignes avec au moins une incohérence", f"{fr(R['part_signalees'], 0)} %")
-    c2.metric("Stress expliqué par le temps passé, sans ces lignes",
-              f"{fr(R['r2_sans_signalees'] * 100, 0)} %", help="Contre 71 % avec toutes les lignes : les résultats ne changent pas.")
-    drapeaux = R["drapeaux"].reset_index()
-    drapeaux["etiquette"] = drapeaux["part des lignes (%)"].map(lambda v: f"{fr(v)} %")
-    graphique = alt.Chart(drapeaux).encode(
-        y=alt.Y("règle:N", sort=None, title=None, axis=alt.Axis(labelLimit=460)),
-        x=alt.X("part des lignes (%):Q", title="Part des lignes", scale=alt.Scale(domain=[0, 20]), axis=AXE_POURCENT))
-    montrer((graphique.mark_bar(size=20, cornerRadiusTopRight=4, cornerRadiusBottomRight=4, color=BLEU).encode(
-        tooltip=[alt.Tooltip("indicateur:N", title="Indicateur"), alt.Tooltip("etiquette:N", title="Part des lignes")])
-             + graphique.mark_text(align="left", dx=6, fontSize=12, color=INK).encode(text="etiquette:N")).properties(
-        title=titre("Quatre règles d'incohérence", "Chaque ligne concernée reçoit un indicateur flag_*, sans être supprimée"), height=200))
-    st.markdown("""
-- Ces incohérences touchent l'emploi, la situation de couple, les heures de travail et l'année de création du compte. **Aucune de ces colonnes ne sert à la segmentation.**
-- Sans les lignes signalées, le temps passé explique toujours la même part du stress : **les résultats ne dépendent pas de ces lignes.**
+    with onglet_nettoyage:
+        st.subheader("Des incohérences signalées, pas supprimées")
+        indicateurs(("Lignes avec au moins une incohérence", f"{fr(R['part_signalees'], 0)} %", None),
+                    ("Stress expliqué par le temps, sans ces lignes", f"{fr(R['r2_sans_signalees'] * 100, 0)} %",
+                     "Contre 71 % avec toutes les lignes"))
+        drapeaux = R["drapeaux"].reset_index()
+        drapeaux["etiquette"] = drapeaux["part des lignes (%)"].map(lambda v: f"{fr(v)} %")
+        base = alt.Chart(drapeaux).encode(
+            y=alt.Y("règle:N", sort=None, title=None, axis=alt.Axis(labelLimit=460)),
+            x=alt.X("part des lignes (%):Q", title="Part des lignes", scale=alt.Scale(domain=[0, 20]), axis=AXE_POURCENT))
+        montrer((base.mark_bar(size=20, cornerRadiusTopRight=4, cornerRadiusBottomRight=4, color=BLEU).encode(
+            tooltip=[alt.Tooltip("indicateur:N", title="Indicateur"), alt.Tooltip("etiquette:N", title="Part des lignes")])
+                 + base.mark_text(align="left", dx=6, fontSize=12, color=INK).encode(text="etiquette:N")).properties(
+            title=titre("Quatre règles d'incohérence", "Chaque ligne concernée reçoit un indicateur flag_*"), height=190))
+        st.markdown("""
+- Ces incohérences touchent l'emploi, la situation de couple, les heures de travail et l'année de création du compte : **aucune de ces colonnes ne sert à la segmentation**.
+- Sans les lignes signalées, le temps passé explique la même part du stress : **les résultats ne dépendent pas de ces lignes**.
 """)
+        st.markdown("**Variables inutilisables**")
+        tableau(R["inutiles"])
 
-    st.header("Variables inutiles")
-    tableau(R["inutiles"])
-
-    st.header("Quel fichier croire, et sur quels champs ?")
-    st.markdown("Instagram nous a envoyé **deux versions presque identiques** de la réplique (« usage » et « users »). L'une a subi un nettoyage non documenté. La consigne nous demande de décider laquelle croire, champ par champ.")
-    comparaison = R["comparaison"]
-    if comparaison is None:
-        st.warning("Le fichier `instagram_users_lifestyleSafe.csv` est absent : la comparaison n'est pas recalculée.")
-    else:
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Colonnes identiques", f"{comparaison['identiques']} sur {comparaison['total']}")
-        c2.metric("Mineurs déclarés salariés à temps plein (fichier usage)", f"{fr(comparaison['mineurs'].iloc[0, 0], 0)} %")
-        c3.metric("Colonnes utilisées identiques dans les deux fichiers", "oui" if comparaison["utilisees_identiques"] else "non")
-        gauche, droite = st.columns(2)
-        with gauche:
-            st.markdown("**Colonnes qui diffèrent (nombre de lignes concernées)**")
-            tableau(comparaison["differences"], 0)
-        with droite:
-            st.markdown(f"**Les 13–17 ans ({fr(comparaison['n_mineurs'], 0)} utilisateurs) dans les deux fichiers**")
-            tableau(comparaison["mineurs"])
-    st.markdown("""
-**Notre décision**
-- **Toutes les colonnes que nous utilisons** sont **identiques dans les deux fichiers** : nos résultats ne dépendent pas de ce choix. Nous travaillons sur le fichier `usage`.
-- **Pour l'emploi et les heures de travail**, le fichier `users` a corrigé l'incohérence des mineurs. Nous n'utilisons pas ces colonnes.
+    with onglet_fichier:
+        st.subheader("Quel fichier croire, et sur quels champs ?")
+        st.markdown("Instagram a fourni **deux versions** de la réplique (« usage » et « users »), dont l'une a subi un nettoyage non documenté.")
+        comparaison = R["comparaison"]
+        if comparaison is None:
+            st.warning("Le fichier `instagram_users_lifestyleSafe.csv` est absent : la comparaison n'est pas recalculée.")
+        else:
+            indicateurs(("Colonnes identiques", f"{comparaison['identiques']} sur {comparaison['total']}", None),
+                        ("Mineurs déclarés salariés (fichier usage)", f"{fr(comparaison['mineurs'].iloc[0, 0], 0)} %",
+                         "Part des 13–17 ans déclarés salariés à temps plein ; 0 % dans le fichier users"),
+                        ("Colonnes utilisées identiques", "oui" if comparaison["utilisees_identiques"] else "non", None))
+        st.markdown("""
+- **Toutes les colonnes que nous utilisons sont identiques dans les deux fichiers** : nos résultats ne dépendent pas de ce choix. Nous travaillons sur le fichier `usage`.
+- **Pour l'emploi et les heures de travail**, nous faisons confiance au fichier `users`, qui a corrigé l'incohérence des mineurs. Nous n'utilisons pas ces colonnes.
 """)
+        if comparaison is not None:
+            with st.expander("Voir le détail de la comparaison"):
+                gauche, droite = st.columns(2)
+                with gauche:
+                    st.markdown("**Colonnes qui diffèrent**")
+                    tableau(comparaison["differences"], 0)
+                with droite:
+                    st.markdown(f"**Les 13–17 ans ({fr(comparaison['n_mineurs'], 0)} utilisateurs)**")
+                    tableau(comparaison["mineurs"])
 
-    st.header("Les variables construites")
-    st.markdown("""
+    with onglet_variables:
+        st.subheader("Trois variables construites")
+        st.markdown("""
 - **Six segments de temps passé** (S1 à S6), dont les seuils séparent les niveaux de stress et de bonheur : moins de 20 min, 20–88 min, 88–188 min, 188–240 min, 240–290 min, plus de 290 min.
-- **Quatre groupes d'âge** (13–17, 18–34, 35–54, 55–65 ans) : les mineurs à part, pour des raisons légales.
+- **Quatre groupes d'âge** (13–17, 18–34, 35–54, 55–65 ans), les mineurs à part pour des raisons légales.
 - **Un indicateur « stress élevé »** (27 ou plus sur 40).
 """)
-    apport = R["apport"].reset_index().rename(columns={"index": "decoupage", "part du stress expliquée (%)": "part"})
-    apport["etiquette"] = apport["part"].map(lambda v: f"{fr(v)} %")
-    graphique = alt.Chart(apport).encode(
-        y=alt.Y("decoupage:N", sort=None, title=None, axis=alt.Axis(labelLimit=420)),
-        x=alt.X("part:Q", title="Part du stress expliquée", scale=alt.Scale(domain=[0, 80]), axis=AXE_POURCENT))
-    montrer((graphique.mark_bar(size=22, cornerRadiusTopRight=4, cornerRadiusBottomRight=4, color=BLEU).encode(
-        tooltip=[alt.Tooltip("decoupage:N", title="Découpage"), alt.Tooltip("etiquette:N", title="Part expliquée")])
-             + graphique.mark_text(align="left", dx=6, fontSize=12, color=INK).encode(text="etiquette:N")).properties(
-        title=titre("Six segments suffisent", "Part des écarts de stress expliquée par chaque découpage"), height=170))
-    chiffres(R["niveaux"], titre="Voir la répartition des utilisateurs par niveau de stress")
-    retenir("le fichier est complet et sans doublon ; les incohérences sont signalées sans changer les résultats ; six segments de temps conservent presque toute l'information du temps passé.")
+        apport = R["apport"].reset_index().rename(columns={"index": "decoupage", "part du stress expliquée (%)": "part"})
+        apport["etiquette"] = apport["part"].map(lambda v: f"{fr(v)} %")
+        base = alt.Chart(apport).encode(
+            y=alt.Y("decoupage:N", sort=None, title=None, axis=alt.Axis(labelLimit=420)),
+            x=alt.X("part:Q", title="Part du stress expliquée", scale=alt.Scale(domain=[0, 80]), axis=AXE_POURCENT))
+        montrer((base.mark_bar(size=22, cornerRadiusTopRight=4, cornerRadiusBottomRight=4, color=BLEU).encode(
+            tooltip=[alt.Tooltip("decoupage:N", title="Découpage"), alt.Tooltip("etiquette:N", title="Part expliquée")])
+                 + base.mark_text(align="left", dx=6, fontSize=12, color=INK).encode(text="etiquette:N")).properties(
+            title=titre("Six segments suffisent", "Part des écarts de stress expliquée par chaque découpage"), height=170))
+
+    retenir("Le fichier est complet et sans doublon ; les incohérences sont signalées sans changer les résultats ; six segments de temps conservent presque toute l'information du temps passé.")
 
 
 def page_hypotheses():
-    st.title("1 · Les hypothèses non concluantes")
-    st.markdown("Plusieurs pistes, appuyées par des sources de santé publique, **ne se vérifient pas dans notre panel** : le sommeil, l'activité physique (pas et sport) et le pays. Un indicateur sans lien avec l'usage est aussi un résultat. La durée des sessions est traitée avec la fréquence de connexion (partie 3.4).")
+    entete("1 · Les hypothèses non concluantes",
+           "Le sommeil, l'activité physique et le pays : trois pistes appuyées par des sources de santé publique, mais sans lien dans notre panel.")
+    onglet_sommeil, onglet_activite, onglet_pays = st.tabs(["Sommeil", "Activité physique", "Pays"])
 
-    st.header("Le sommeil")
-    st.markdown("**Questions :** Instagram fait-il baisser le nombre d'heures de sommeil ? Le manque de sommeil joue-t-il un rôle dans le bien-être ?")
-    st.caption("Source : [info.gouv.fr, « Santé mentale : pourquoi le sommeil joue un rôle clé », 2025](https://www.info.gouv.fr/actualite/sante-mentale-pourquoi-le-sommeil-joue-un-role-cle) — « Avoir une bonne santé du sommeil contribue à avoir une bonne santé mentale. »")
-    sommeil = R["sommeil"].reset_index()
-    sommeil["court"] = segment_vers_court(sommeil["segment"])
-    sommeil["etiquette"] = sommeil["sommeil_moyen"].map(lambda v: f"{fr(v)} h")
-    sommeil["moins6"] = sommeil["part_moins_de_6h"].map(lambda v: f"{fr(v)} %")
-    montrer(barres_simples(
-        sommeil, "court", "sommeil_moyen", "etiquette",
-        titre("Environ 7 h de sommeil dans tous les segments", "Sommeil moyen par segment de temps passé sur Instagram"),
-        "Segment de temps passé (S1 : moins de 20 min · S6 : plus de 290 min)", "Sommeil moyen (heures par nuit)", COURTS, [0, 9],
-        [alt.Tooltip("segment:N", title="Segment"), alt.Tooltip("etiquette:N", title="Sommeil moyen"),
-         alt.Tooltip("moins6:N", title="Dorment moins de 6 h")]))
-    st.markdown("Le sommeil moyen est d'environ **7 h** et la part de petits dormeurs (moins de 6 h) d'environ **17 %**, dans tous les segments. Le sommeil n'est lié ni au temps passé, ni au stress, ni au bonheur (tableau plus bas).")
+    with onglet_sommeil:
+        st.subheader("Instagram fait-il baisser le sommeil, et le sommeil joue-t-il sur le bien-être ?")
+        st.caption("Source : [info.gouv.fr, 2025](https://www.info.gouv.fr/actualite/sante-mentale-pourquoi-le-sommeil-joue-un-role-cle) — « Avoir une bonne santé du sommeil contribue à avoir une bonne santé mentale. »")
+        sommeil = R["sommeil"].reset_index()
+        sommeil["court"] = segment_vers_court(sommeil["segment"])
+        sommeil["etiquette"] = sommeil["sommeil_moyen"].map(lambda v: f"{fr(v)} h")
+        sommeil["moins6"] = sommeil["part_moins_de_6h"].map(lambda v: f"{fr(v)} %")
+        montrer(barres_simples(sommeil, "court", "sommeil_moyen", "etiquette",
+                               titre("Environ 7 h de sommeil dans tous les segments", "Sommeil moyen par segment de temps passé"),
+                               "Segment de temps passé (S1 : moins de 20 min · S6 : plus de 290 min)", "Sommeil moyen (heures par nuit)",
+                               COURTS, [0, 9], [alt.Tooltip("segment:N", title="Segment"), alt.Tooltip("etiquette:N", title="Sommeil moyen"),
+                                                alt.Tooltip("moins6:N", title="Dorment moins de 6 h")]))
+        st.markdown("Environ **7 h** de sommeil et **17 %** de petits dormeurs dans tous les segments. Le sommeil n'est lié ni au temps passé, ni au stress, ni au bonheur.")
 
-    st.header("L'activité physique : pas et sport")
-    st.markdown("**Questions :** le temps passé sur Instagram fait-il baisser l'activité physique ? L'activité physique joue-t-elle un rôle sur le bien-être ?")
-    st.caption("Source : [Ameli, « Sport et activité physique : un atout pour le bien-être »](https://www.ameli.fr/assure/sante/themes/activite-physique-sante/sport-et-activite-physique-un-atout-pour-le-bien-etre) — l'activité physique réduit le stress et l'anxiété, régule l'humeur et améliore le sommeil.")
-    activite = R["activite"].reset_index()
-    activite["court"] = segment_vers_court(activite["segment"])
-    activite["etiquette_pas"] = activite["pas_par_jour"].map(lambda v: fr(v, 0))
-    activite["etiquette_sport"] = activite["sport_heures_semaine"].map(lambda v: f"{fr(v)} h")
-    gauche, droite = st.columns(2)
-    with gauche:
-        montrer(barres_simples(activite, "court", "pas_par_jour", "etiquette_pas",
-                               titre("Pas par jour", "Moyenne par segment"), "Segment de temps passé", "Pas par jour",
-                               COURTS, [0, 9500], [alt.Tooltip("segment:N", title="Segment"), alt.Tooltip("etiquette_pas:N", title="Pas par jour")]))
-    with droite:
-        montrer(barres_simples(activite, "court", "sport_heures_semaine", "etiquette_sport",
-                               titre("Sport (heures par semaine)", "Moyenne par segment"), "Segment de temps passé",
-                               "Heures de sport par semaine", COURTS, [0, 8.5],
-                               [alt.Tooltip("segment:N", title="Segment"), alt.Tooltip("etiquette_sport:N", title="Sport par semaine")]))
-    st.markdown(f"Environ **8 000 pas par jour** et **7,2 h de sport par semaine** dans tous les segments. Le nombre de pas varie à peine (98 % des utilisateurs entre {fr(R['pas_bornes'][0], 0)} et {fr(R['pas_bornes'][1], 0)}) : cette variable ne permet pas de distinguer des profils.")
-    st.markdown("**Liens avec le temps passé et le bien-être** (corrélations de −1 à 1, 0 = aucun lien)")
-    tableau(R["correlations_vie"], 3)
+    with onglet_activite:
+        st.subheader("Instagram fait-il baisser l'activité physique, et l'activité joue-t-elle sur le bien-être ?")
+        st.caption("Source : [Ameli](https://www.ameli.fr/assure/sante/themes/activite-physique-sante/sport-et-activite-physique-un-atout-pour-le-bien-etre) — l'activité physique réduit le stress et l'anxiété, régule l'humeur et améliore le sommeil.")
+        activite = R["activite"].reset_index()
+        activite["court"] = segment_vers_court(activite["segment"])
+        activite["etiquette_pas"] = activite["pas_par_jour"].map(lambda v: fr(v, 0))
+        activite["etiquette_sport"] = activite["sport_heures_semaine"].map(lambda v: f"{fr(v)} h")
+        gauche, droite = st.columns(2)
+        with gauche:
+            montrer(barres_simples(activite, "court", "pas_par_jour", "etiquette_pas", titre("Pas par jour", "Moyenne par segment"),
+                                   "Segment de temps passé", "Pas par jour", COURTS, [0, 9500],
+                                   [alt.Tooltip("segment:N", title="Segment"), alt.Tooltip("etiquette_pas:N", title="Pas par jour")]))
+        with droite:
+            montrer(barres_simples(activite, "court", "sport_heures_semaine", "etiquette_sport",
+                                   titre("Sport (heures par semaine)", "Moyenne par segment"), "Segment de temps passé",
+                                   "Heures de sport par semaine", COURTS, [0, 8.5],
+                                   [alt.Tooltip("segment:N", title="Segment"), alt.Tooltip("etiquette_sport:N", title="Sport par semaine")]))
+        st.markdown(f"Environ **8 000 pas par jour** et **7,2 h de sport par semaine** dans tous les segments. Les pas varient à peine (98 % des utilisateurs entre {fr(R['pas_bornes'][0], 0)} et {fr(R['pas_bornes'][1], 0)}) : cette variable ne distingue aucun profil.")
 
-    st.header("Le pays")
-    pays = R["pays"].reset_index().rename(columns={"index": "pays"})
-    pays["stress_txt"] = pays["stress"].map(fr)
-    pays["bonheur_txt"] = pays["bonheur"].map(lambda v: fr(v, 2))
-    pays["n_txt"] = pays["n"].map(lambda v: fr(v, 0))
-    ordre_pays = list(pays["pays"])
-    gauche, droite = st.columns(2)
-    with gauche:
-        montrer(barres_simples(pays, "pays", "stress", "stress_txt", titre("Stress moyen par pays", "Échelle de 0 à 40"),
-                               None, "Stress moyen (0–40)", ordre_pays, [0, 25],
-                               [alt.Tooltip("pays:N", title="Pays"), alt.Tooltip("stress_txt:N", title="Stress moyen"),
-                                alt.Tooltip("n_txt:N", title="Utilisateurs")], angle=-35))
-    with droite:
-        montrer(barres_simples(pays, "pays", "bonheur", "bonheur_txt", titre("Bonheur moyen par pays", "Échelle de 1 à 10"),
-                               None, "Bonheur moyen (1–10)", ordre_pays, [0, 7],
-                               [alt.Tooltip("pays:N", title="Pays"), alt.Tooltip("bonheur_txt:N", title="Bonheur moyen"),
-                                alt.Tooltip("n_txt:N", title="Utilisateurs")], couleur=ORANGE, angle=-35))
-    chiffres(R["pays"].rename_axis("pays"), 2)
-    st.markdown("Dans les 10 pays, le stress moyen reste entre **19,9 et 20,3** et le bonheur entre **5,45 et 5,55**, avec le même temps passé (environ 3 h 10 par jour). À temps égal, les écarts sont inférieurs à 0,1 point.")
-    retenir("le sommeil, l'activité physique et le pays **ne sont pas liés** à l'usage d'Instagram ni au bien-être dans notre panel. Nos sources laissaient attendre un effet du sommeil et du sport : c'est une limite de la réplique synthétique (partie 8).")
+    with onglet_pays:
+        st.subheader("Le pays change-t-il le bien-être ?")
+        pays = R["pays"].reset_index().rename(columns={"index": "pays"})
+        pays["stress_txt"] = pays["stress"].map(fr)
+        pays["bonheur_txt"] = pays["bonheur"].map(lambda v: fr(v, 2))
+        pays["n_txt"] = pays["n"].map(lambda v: fr(v, 0))
+        ordre_pays = list(pays["pays"])
+        gauche, droite = st.columns(2)
+        with gauche:
+            montrer(barres_simples(pays, "pays", "stress", "stress_txt", titre("Stress moyen par pays", "Échelle de 0 à 40"), None,
+                                   "Stress moyen (0–40)", ordre_pays, [0, 25],
+                                   [alt.Tooltip("pays:N", title="Pays"), alt.Tooltip("stress_txt:N", title="Stress moyen"),
+                                    alt.Tooltip("n_txt:N", title="Utilisateurs")], angle=-35))
+        with droite:
+            montrer(barres_simples(pays, "pays", "bonheur", "bonheur_txt", titre("Bonheur moyen par pays", "Échelle de 1 à 10"), None,
+                                   "Bonheur moyen (1–10)", ordre_pays, [0, 7],
+                                   [alt.Tooltip("pays:N", title="Pays"), alt.Tooltip("bonheur_txt:N", title="Bonheur moyen"),
+                                    alt.Tooltip("n_txt:N", title="Utilisateurs")], couleur=ROUGE, angle=-35))
+        st.markdown("Dans les 10 pays, le stress reste entre **19,9 et 20,3** et le bonheur entre **5,45 et 5,55**, pour le même temps passé (environ 3 h 10 par jour).")
+
+    chiffres(R["correlations_vie"], 3, titre="Voir les corrélations du sommeil, des pas et du sport (de −1 à 1, 0 = aucun lien)")
+    retenir("Le sommeil, l'activité physique et le pays ne sont pas liés à l'usage d'Instagram ni au bien-être dans notre panel. Nos sources laissaient attendre un effet du sommeil et du sport : c'est une limite de la réplique synthétique (partie 8).")
 
 
 def page_temps():
-    st.title("2 · Le temps passé sur Instagram : le cœur du lien")
-
-    st.header("2.1 — Le temps passé est-il le facteur le plus lié au stress ?")
+    entete("2 · Le temps passé sur Instagram", "Le cœur du lien entre l'usage et le bien-être.")
+    onglet_stress, onglet_bonheur = st.tabs(["2.1 · Stress", "2.2 · Bonheur"])
     segments = R["segments_temps"]
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Stress expliqué par le temps passé", f"{fr(R['r2_stress'] * 100, 0)} %")
-    c2.metric("Stress en plus par heure", f"+{fr(R['pente'])} points")
-    c3.metric("Stress élevé en S6 (plus de 290 min)", f"{fr(segments.loc['S6 Très intensif', 'part_stress_eleve'], 0)} %")
 
-    data = R["stress_30min"].reset_index()
-    data["heures"] = (data["tranche_30min"] + 15) / 60
-    data["tranche"] = data["tranche_30min"].map(libelle_tranche)
-    for colonne in ("stress", "q1", "q3"):
-        data[f"{colonne}_txt"] = data[colonne].map(fr)
-    data["n_txt"] = data["n"].map(lambda v: fr(v, 0))
-    x = alt.X("heures:Q", title="Temps passé sur Instagram par jour", axis=AXE_HEURES, scale=alt.Scale(domain=[0, 8.5]))
-    base = alt.Chart(data).encode(x=x)
-    bande = base.mark_area(color=BLEU, opacity=0.12).encode(y=alt.Y("q1:Q", title="Stress perçu (0–40)", scale=alt.Scale(domain=[0, 40])), y2="q3:Q")
-    ligne = base.mark_line(color=BLEU, strokeWidth=2).encode(y="stress:Q")
-    points = base.mark_point(filled=True, size=70, color=BLEU, stroke=SURFACE, strokeWidth=1.5, opacity=1).encode(
-        y="stress:Q", tooltip=[alt.Tooltip("tranche:N", title="Temps par jour"), alt.Tooltip("stress_txt:N", title="Stress moyen"),
-                               alt.Tooltip("q1_txt:N", title="25 % des utilisateurs sous"), alt.Tooltip("q3_txt:N", title="25 % au-dessus de"),
-                               alt.Tooltip("n_txt:N", title="Utilisateurs")])
-    limites = pd.DataFrame({"x": [b / 60 for b in BORNES_SEGMENTS[1:-1]]})
-    regles = alt.Chart(limites).mark_rule(color=AXIS, strokeWidth=1).encode(x="x:Q")
-    noms = pd.DataFrame({"x": [10 / 60, 54 / 60, 138 / 60, 214 / 60, 265 / 60, 6.6], "y": [38.5] * 6, "texte": COURTS})
-    etiquettes = alt.Chart(noms).mark_text(fontSize=11.5, color=MUTED, fontWeight=600).encode(x="x:Q", y="y:Q", text="texte:N")
-    montrer((bande + regles + ligne + points + etiquettes).properties(
-        title=titre("Le stress monte régulièrement avec le temps passé sur Instagram",
-                    "Stress moyen par tranche de 30 minutes · zone bleue : la moitié centrale des utilisateurs · lignes : limites des segments S1 à S6"),
-        height=380))
-
-    seg = segments.reset_index()
-    seg["court"] = segment_vers_court(seg["segment"])
-    seg["duree"] = DUREES_SEGMENTS
-    seg["stress_txt"] = seg["stress"].map(fr)
-    seg["bonheur_txt"] = seg["bonheur"].map(fr)
-    seg["eleve_txt"] = seg["part_stress_eleve"].map(lambda v: f"{fr(v, 0)} %")
-    infobulle = [alt.Tooltip("segment:N", title="Segment"), alt.Tooltip("duree:N", title="Temps par jour"),
-                 alt.Tooltip("stress_txt:N", title="Stress moyen"), alt.Tooltip("bonheur_txt:N", title="Bonheur moyen"),
-                 alt.Tooltip("eleve_txt:N", title="En stress élevé")]
-    gauche, droite = st.columns(2)
-    with gauche:
-        montrer(barres_simples(seg, "court", "stress", "stress_txt", titre("Stress moyen par segment", "Échelle de 0 à 40"),
-                               "Segment de temps passé", "Stress moyen (0–40)", COURTS, [0, 40], infobulle))
-    with droite:
-        montrer(barres_simples(seg, "court", "bonheur", "bonheur_txt", titre("Bonheur moyen par segment", "Échelle de 1 à 10"),
-                               "Segment de temps passé", "Bonheur moyen (1–10)", COURTS, [0, 9], infobulle, couleur=ORANGE))
-    affichage = segments.copy()
-    affichage.insert(0, "temps par jour", DUREES_SEGMENTS)
-    st.markdown("**Les six segments de temps passé**")
-    tableau(affichage.rename(columns={"n": "utilisateurs", "minutes": "temps moyen (min)", "stress": "stress (0–40)",
-                                      "bonheur": "bonheur (1–10)", "part_stress_eleve": "stress élevé (%)"}).rename_axis("segment"))
-    st.markdown("""
-- Le stress **monte régulièrement** : environ **+5,4 points par heure**, de 4,3 en S1 à 33,5 en S6. Le temps passé explique à lui seul **71 %** des écarts de stress.
-- Le bonheur, lui, **chute surtout aux deux extrêmes** : de 8,0 en S1 à 6,6 en S2, puis il reste entre 5,7 et 5,2 de S3 à S5, avant de tomber à 3,9 en S6.
-- Les **seuils de 20 min et d'environ 4 h 50** (290 min) marquent ces deux chutes : c'est ce que la segmentation apporte de plus qu'un simple classement par temps passé.
+    with onglet_stress:
+        st.subheader("Le temps passé est-il le facteur d'usage le plus lié au stress ?")
+        indicateurs(("Stress expliqué par le temps passé", f"{fr(R['r2_stress'] * 100, 0)} %", None),
+                    ("Stress en plus par heure", f"+{fr(R['pente'])} pt", None),
+                    ("Stress élevé en S6 (plus de 290 min)", f"{fr(segments.loc['S6 Très intensif', 'part_stress_eleve'], 0)} %", None))
+        data = R["stress_30min"].reset_index()
+        data["heures"] = (data["tranche_30min"] + 15) / 60
+        data["tranche"] = data["tranche_30min"].map(libelle_tranche)
+        for colonne in ("stress", "q1", "q3"):
+            data[f"{colonne}_txt"] = data[colonne].map(fr)
+        data["n_txt"] = data["n"].map(lambda v: fr(v, 0))
+        base = alt.Chart(data).encode(x=alt.X("heures:Q", title="Temps passé sur Instagram par jour", axis=AXE_HEURES,
+                                              scale=alt.Scale(domain=[0, 8.5])))
+        bande = base.mark_area(color=BLEU, opacity=0.12).encode(
+            y=alt.Y("q1:Q", title="Stress perçu (0–40)", scale=alt.Scale(domain=[0, 40])), y2="q3:Q")
+        ligne = base.mark_line(color=BLEU, strokeWidth=2).encode(y="stress:Q")
+        points = base.mark_point(filled=True, size=70, color=BLEU, stroke=SURFACE, strokeWidth=1.5, opacity=1).encode(
+            y="stress:Q", tooltip=[alt.Tooltip("tranche:N", title="Temps par jour"), alt.Tooltip("stress_txt:N", title="Stress moyen"),
+                                   alt.Tooltip("q1_txt:N", title="25 % des utilisateurs sous"),
+                                   alt.Tooltip("q3_txt:N", title="25 % au-dessus de"), alt.Tooltip("n_txt:N", title="Utilisateurs")])
+        regles = alt.Chart(pd.DataFrame({"x": [b / 60 for b in BORNES_SEGMENTS[1:-1]]})).mark_rule(color=AXIS, strokeWidth=1).encode(x="x:Q")
+        noms = pd.DataFrame({"x": [10 / 60, 54 / 60, 138 / 60, 214 / 60, 265 / 60, 6.6], "y": [38.5] * 6, "texte": COURTS})
+        etiquettes = alt.Chart(noms).mark_text(fontSize=11.5, color=MUTED, fontWeight=600).encode(x="x:Q", y="y:Q", text="texte:N")
+        montrer((bande + regles + ligne + points + etiquettes).properties(
+            title=titre("Le stress monte régulièrement avec le temps passé",
+                        "Stress moyen par tranche de 30 minutes · zone bleue : la moitié centrale des utilisateurs · lignes : segments S1 à S6"),
+            height=370))
+        seg = segments.reset_index()
+        seg["court"] = segment_vers_court(seg["segment"])
+        seg["duree"] = DUREES_SEGMENTS
+        seg["stress_txt"] = seg["stress"].map(fr)
+        seg["bonheur_txt"] = seg["bonheur"].map(fr)
+        seg["eleve_txt"] = seg["part_stress_eleve"].map(lambda v: f"{fr(v, 0)} %")
+        infobulle = [alt.Tooltip("segment:N", title="Segment"), alt.Tooltip("duree:N", title="Temps par jour"),
+                     alt.Tooltip("stress_txt:N", title="Stress moyen"), alt.Tooltip("bonheur_txt:N", title="Bonheur moyen"),
+                     alt.Tooltip("eleve_txt:N", title="En stress élevé")]
+        gauche, droite = st.columns(2)
+        with gauche:
+            montrer(barres_simples(seg, "court", "stress", "stress_txt", titre("Stress moyen par segment", "Échelle de 0 à 40"),
+                                   "Segment de temps passé", "Stress moyen (0–40)", COURTS, [0, 40], infobulle))
+        with droite:
+            montrer(barres_simples(seg, "court", "bonheur", "bonheur_txt", titre("Bonheur moyen par segment", "Échelle de 1 à 10"),
+                                   "Segment de temps passé", "Bonheur moyen (1–10)", COURTS, [0, 9], infobulle, couleur=ROUGE))
+        st.markdown("""
+- Le stress **monte régulièrement** : environ **+5,4 points par heure**, de 4,3 en S1 à 33,5 en S6.
+- Le bonheur **chute surtout aux deux extrêmes** : de 8,0 en S1 à 6,6 en S2, puis entre 5,7 et 5,2 de S3 à S5, avant 3,9 en S6.
+- Les **seuils de 20 min et d'environ 4 h 50** marquent ces deux chutes : c'est ce que la segmentation apporte de plus qu'un simple classement par temps passé.
 """)
-    conclusion_produit("le temps quotidien passé sur l'application est **l'indicateur numéro un** à suivre pour repérer les groupes d'utilisateurs les plus stressés. Instagram le mesure déjà pour tous ses utilisateurs, sans rien leur demander.")
-    st.caption("Sources : [Riehm et al., 2019 (Johns Hopkins)](https://hub.jhu.edu/2019/09/11/social-media-teen-mental-health/) — au-delà de 3 h par jour, le risque d'anxiété et de dépression des adolescents augmente · [Liu et al., 2022, méta-analyse](https://pmc.ncbi.nlm.nih.gov/articles/PMC9103874/) — chaque heure de plus par jour va avec environ 13 % de risque de dépression en plus.")
-    retenir("oui, **le temps passé est le facteur d'usage le plus lié au stress**, de façon régulière, et il est aussi lié au bonheur, surtout aux deux extrêmes.")
+        affichage = segments.copy()
+        affichage.insert(0, "temps par jour", DUREES_SEGMENTS)
+        chiffres(affichage.rename(columns={"n": "utilisateurs", "minutes": "temps moyen (min)", "stress": "stress (0–40)",
+                                           "bonheur": "bonheur (1–10)", "part_stress_eleve": "stress élevé (%)"}).rename_axis("segment"),
+                 titre="Voir les six segments en chiffres")
+        st.caption("Sources : [Riehm et al., 2019](https://hub.jhu.edu/2019/09/11/social-media-teen-mental-health/) — au-delà de 3 h par jour, le risque d'anxiété et de dépression des adolescents augmente · [Liu et al., 2022](https://pmc.ncbi.nlm.nih.gov/articles/PMC9103874/) — chaque heure de plus par jour va avec environ 13 % de risque de dépression en plus.")
+        retenir("Le temps passé est le facteur d'usage le plus lié au stress, de façon régulière : c'est l'indicateur numéro un pour repérer les groupes les plus stressés, et Instagram le mesure déjà pour tous ses utilisateurs.")
 
-    st.header("2.2 — Le temps passé chaque jour est-il aussi lié au bonheur ?")
-    profils = R["profils_temps"]
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Temps médian des plus heureux", f"{fr(profils.loc['temps médian par jour (min)', 'Plus heureux (9–10)'], 0)} min")
-    c2.metric("Temps médian des moins heureux", f"{fr(profils.loc['temps médian par jour (min)', 'Moins heureux (1–2)'], 0)} min")
-    c3.metric("Sessions par jour : plus heureux / autres",
-              f"{fr(profils.loc['sessions par jour', 'Plus heureux (9–10)'])} / {fr(profils.loc['sessions par jour', 'Autres'])}")
-    parts = R["bonheur_segments"].reset_index().melt(id_vars=["segment", "n"], value_vars=["part_tres_heureux", "part_tres_malheureux"],
-                                                     var_name="groupe", value_name="part")
-    parts["court"] = segment_vers_court(parts["segment"])
-    parts["groupe"] = parts["groupe"].map({"part_tres_heureux": "Très heureux (bonheur 9–10)", "part_tres_malheureux": "Très malheureux (bonheur 1–2)"})
-    parts["etiquette"] = parts["part"].map(lambda v: f"{fr(v)} %")
-    couleurs = alt.Scale(domain=["Très heureux (bonheur 9–10)", "Très malheureux (bonheur 1–2)"], range=[BLEU, ORANGE])
-    base = alt.Chart(parts).encode(
-        x=alt.X("court:N", sort=COURTS, title="Segment de temps passé", axis=alt.Axis(labelAngle=0)),
-        y=alt.Y("part:Q", title="Part des utilisateurs", scale=alt.Scale(domain=[0, 55]), axis=AXE_POURCENT),
-        color=alt.Color("groupe:N", scale=couleurs, title=None))
-    lignes = base.mark_line(strokeWidth=2) + base.mark_point(filled=True, size=80, stroke=SURFACE, strokeWidth=1.5, opacity=1).encode(
-        tooltip=[alt.Tooltip("segment:N", title="Segment"), alt.Tooltip("groupe:N", title="Groupe"), alt.Tooltip("etiquette:N", title="Part")])
-    extremites = base.mark_text(dy=-12, fontSize=12, color=INK2).encode(text="etiquette:N", color=alt.value(INK2)).transform_filter(
-        alt.FieldOneOfPredicate(field="court", oneOf=["S1", "S6"]))
-    medianes = pd.DataFrame({"groupe": ["Plus heureux (9–10)", "Moins heureux (1–2)"],
-                             "minutes": [profils.loc["temps médian par jour (min)", "Plus heureux (9–10)"],
-                                         profils.loc["temps médian par jour (min)", "Moins heureux (1–2)"]]})
-    medianes["etiquette"] = medianes["minutes"].map(lambda v: f"{fr(v, 0)} min")
-    gauche, droite = st.columns([2.2, 1])
-    with gauche:
-        montrer((lignes + extremites).properties(title=titre("La part de très heureux s'effondre avec le temps passé",
-                                                             "Part des utilisateurs très heureux et très malheureux par segment · survolez les points"), height=360))
-    with droite:
-        base_m = alt.Chart(medianes).encode(
-            x=alt.X("groupe:N", sort=None, title=None, axis=alt.Axis(labelAngle=0, labelLimit=200)),
-            y=alt.Y("minutes:Q", title="Temps médian par jour (min)", scale=alt.Scale(domain=[0, 290])))
-        montrer((base_m.mark_bar(size=48, cornerRadiusTopLeft=4, cornerRadiusTopRight=4).encode(
-            color=alt.Color("groupe:N", scale=alt.Scale(domain=list(medianes["groupe"]), range=[BLEU, ORANGE]), legend=None),
-            tooltip=[alt.Tooltip("groupe:N", title="Groupe"), alt.Tooltip("etiquette:N", title="Temps médian")])
-                 + base_m.mark_text(dy=-9, fontSize=12.5, color=INK).encode(text="etiquette:N")).properties(
-            title=titre("Deux fois moins de temps", "Temps médian passé chaque jour"), height=360))
-    chiffres(R["bonheur_segments"].rename_axis("segment"))
-    st.markdown("""
-- En S1 (moins de 20 min par jour), près de **la moitié** des utilisateurs sont très heureux ; en S6 (plus de 290 min), ils ne sont plus que **6 %**, et plus d'un tiers sont très malheureux.
-- Les plus heureux passent **deux fois moins de temps** sur l'application que les moins heureux, et ouvrent l'application moins souvent.
+    with onglet_bonheur:
+        st.subheader("Le temps passé chaque jour est-il aussi lié au bonheur ?")
+        profils = R["profils_temps"]
+        indicateurs(("Temps médian des plus heureux", f"{fr(profils.loc['temps médian par jour (min)', 'Plus heureux (9–10)'], 0)} min", None),
+                    ("Temps médian des moins heureux", f"{fr(profils.loc['temps médian par jour (min)', 'Moins heureux (1–2)'], 0)} min", None),
+                    ("Sessions par jour : plus heureux / autres",
+                     f"{fr(profils.loc['sessions par jour', 'Plus heureux (9–10)'])} / {fr(profils.loc['sessions par jour', 'Autres'])}", None))
+        parts = R["bonheur_segments"].reset_index().melt(id_vars=["segment", "n"], value_vars=["part_tres_heureux", "part_tres_malheureux"],
+                                                         var_name="groupe", value_name="part")
+        parts["court"] = segment_vers_court(parts["segment"])
+        parts["groupe"] = parts["groupe"].map({"part_tres_heureux": "Très heureux (bonheur 9–10)",
+                                               "part_tres_malheureux": "Très malheureux (bonheur 1–2)"})
+        parts["etiquette"] = parts["part"].map(lambda v: f"{fr(v)} %")
+        base = alt.Chart(parts).encode(
+            x=alt.X("court:N", sort=COURTS, title="Segment de temps passé", axis=alt.Axis(labelAngle=0)),
+            y=alt.Y("part:Q", title="Part des utilisateurs", scale=alt.Scale(domain=[0, 55]), axis=AXE_POURCENT),
+            color=alt.Color("groupe:N", scale=alt.Scale(domain=["Très heureux (bonheur 9–10)", "Très malheureux (bonheur 1–2)"],
+                                                        range=[BLEU, ROUGE]), title=None))
+        lignes = base.mark_line(strokeWidth=2) + base.mark_point(filled=True, size=80, stroke=SURFACE, strokeWidth=1.5, opacity=1).encode(
+            tooltip=[alt.Tooltip("segment:N", title="Segment"), alt.Tooltip("groupe:N", title="Groupe"), alt.Tooltip("etiquette:N", title="Part")])
+        extremites = base.mark_text(dy=-12, fontSize=12, color=INK2).encode(text="etiquette:N", color=alt.value(INK2)).transform_filter(
+            alt.FieldOneOfPredicate(field="court", oneOf=["S1", "S6"]))
+        medianes = pd.DataFrame({"groupe": ["Plus heureux (9–10)", "Moins heureux (1–2)"],
+                                 "minutes": [profils.loc["temps médian par jour (min)", "Plus heureux (9–10)"],
+                                             profils.loc["temps médian par jour (min)", "Moins heureux (1–2)"]]})
+        medianes["etiquette"] = medianes["minutes"].map(lambda v: f"{fr(v, 0)} min")
+        gauche, droite = st.columns([2.2, 1])
+        with gauche:
+            montrer((lignes + extremites).properties(title=titre("La part de très heureux s'effondre avec le temps passé",
+                                                                 "Part des utilisateurs très heureux et très malheureux par segment"), height=350))
+        with droite:
+            base_m = alt.Chart(medianes).encode(x=alt.X("groupe:N", sort=None, title=None, axis=alt.Axis(labelAngle=0, labelLimit=200)),
+                                                y=alt.Y("minutes:Q", title="Temps médian par jour (min)", scale=alt.Scale(domain=[0, 290])))
+            montrer((base_m.mark_bar(size=48, cornerRadiusTopLeft=4, cornerRadiusTopRight=4).encode(
+                color=alt.Color("groupe:N", scale=alt.Scale(domain=list(medianes["groupe"]), range=[BLEU, ROUGE]), legend=None),
+                tooltip=[alt.Tooltip("groupe:N", title="Groupe"), alt.Tooltip("etiquette:N", title="Temps médian")])
+                     + base_m.mark_text(dy=-9, fontSize=12.5, color=INK).encode(text="etiquette:N")).properties(
+                title=titre("Deux fois moins de temps", "Temps médian passé chaque jour"), height=350))
+        st.markdown("""
+- En S1 (moins de 20 min par jour), près de **la moitié** des utilisateurs sont très heureux ; en S6, ils ne sont plus que **6 %**, et plus d'un tiers sont très malheureux.
+- Les plus heureux passent **deux fois moins de temps** sur l'application que les moins heureux, et l'ouvrent moins souvent.
 """)
-    st.markdown("**Note : le temps passé et l'activité disent la même chose.** Les compteurs d'activité (likes, stories, commentaires, messages, publicités, sessions) sont presque des copies du temps passé : plus on reste, plus on agit. Ils n'apportent donc pas d'information en plus (partie 3).")
-    copies = R["copies"].reset_index().rename(columns={"index": "variable", "corrélation avec le temps passé": "correlation"})
-    copies["etiquette"] = copies["correlation"].map(lambda v: fr(v, 2))
-    base = alt.Chart(copies).encode(
-        y=alt.Y("variable:N", sort="-x", title=None),
-        x=alt.X("correlation:Q", title="Corrélation avec le temps passé par jour (0 à 1)", scale=alt.Scale(domain=[0, 1.05]),
-                axis=alt.Axis(labelExpr="replace(format(datum.value, '.1f'), '.', ',')")))
-    montrer((base.mark_bar(size=18, cornerRadiusTopRight=4, cornerRadiusBottomRight=4, color=BLEU).encode(
-        tooltip=[alt.Tooltip("variable:N", title="Variable"), alt.Tooltip("etiquette:N", title="Corrélation")])
-             + base.mark_text(align="left", dx=6, fontSize=12, color=INK).encode(text="etiquette:N")).properties(
-        title=titre("Les compteurs d'activité suivent le temps passé", "Corrélation de chaque compteur avec le temps passé par jour"), height=250))
-    retenir("le temps passé est aussi lié au bonheur : **les plus heureux sont ceux qui utilisent le moins Instagram**, en temps comme en nombre de sessions.")
+        chiffres(R["bonheur_segments"].rename_axis("segment"), titre="Voir les parts par segment")
+        st.markdown("**Le temps passé et l'activité disent la même chose.** Les compteurs d'activité sont presque des copies du temps passé : plus on reste, plus on agit. Ils n'apportent donc pas d'information en plus (partie 4).")
+        copies = R["copies"].reset_index().rename(columns={"index": "variable", "corrélation avec le temps passé": "correlation"})
+        copies["etiquette"] = copies["correlation"].map(lambda v: fr(v, 2))
+        base = alt.Chart(copies).encode(
+            y=alt.Y("variable:N", sort="-x", title=None),
+            x=alt.X("correlation:Q", title="Corrélation avec le temps passé par jour (0 à 1)", scale=alt.Scale(domain=[0, 1.05]),
+                    axis=alt.Axis(labelExpr="replace(format(datum.value, '.1f'), '.', ',')")))
+        montrer((base.mark_bar(size=18, cornerRadiusTopRight=4, cornerRadiusBottomRight=4, color=BLEU).encode(
+            tooltip=[alt.Tooltip("variable:N", title="Variable"), alt.Tooltip("etiquette:N", title="Corrélation")])
+                 + base.mark_text(align="left", dx=6, fontSize=12, color=INK).encode(text="etiquette:N")).properties(
+            title=titre("Les compteurs d'activité suivent le temps passé", "Corrélation de chaque compteur avec le temps passé par jour"), height=240))
+        retenir("Les plus heureux sont ceux qui utilisent le moins Instagram, en temps comme en nombre de sessions.")
 
 
 def page_age():
-    st.title("3 · Le rôle de l'âge")
+    entete("3 · Le rôle de l'âge", "L'âge est la seule variable, en dehors du temps passé, qui change le lien avec le stress.")
+    onglet_egal, onglet_exposition = st.tabs(["À usage égal", "Exposition des plus jeunes"])
 
-    st.header("D'après l'âge, à usage égal, qui est le plus stressé ?")
-    st.markdown("Pour comparer des utilisateurs à **usage égal**, on regarde le segment **S4 Soutenu** (188 à 240 min par jour, environ 3 h 30 en moyenne dans chaque tranche d'âge).")
-    age = R["age_s4"]
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Stress des 13–17 ans en S4", fr(age.loc["13–17 ans", "stress"]))
-    c2.metric("Stress des 55–65 ans en S4", fr(age.loc["55–65 ans", "stress"]))
-    c3.metric("Stress en plus par tranche de 10 ans", f"+{fr(R['pente_age'])} point")
-    donnees = age.reset_index()
-    donnees["etiquette"] = donnees["stress"].map(fr)
-    donnees["minutes_txt"] = donnees["minutes"].map(lambda v: f"{fr(v, 0)} min")
-    montrer(barres_simples(donnees, "tranche_age", "stress", "etiquette",
-                           titre("À usage égal, le stress augmente avec l'âge", "Stress moyen des utilisateurs du segment S4 (188 à 240 min par jour)"),
-                           None, "Stress moyen (0–40)", TRANCHES_AGE, [0, 30],
-                           [alt.Tooltip("tranche_age:N", title="Âge"), alt.Tooltip("etiquette:N", title="Stress moyen"),
-                            alt.Tooltip("minutes_txt:N", title="Temps moyen par jour")]))
-    grille = R["grille_age"].reset_index()
-    grille["court"] = segment_vers_court(grille["segment"])
-    grille["etiquette"] = grille["stress"].map(fr)
-    grille["n_txt"] = grille["n"].map(lambda v: fr(v, 0))
-    montrer(carte_chaleur(grille, "court", "tranche_age", "stress", "etiquette", COURTS, TRANCHES_AGE, [0, 40], "Stress moyen", 22,
-                          [alt.Tooltip("tranche_age:N", title="Âge"), alt.Tooltip("segment:N", title="Segment"),
-                           alt.Tooltip("etiquette:N", title="Stress moyen"), alt.Tooltip("n_txt:N", title="Utilisateurs")],
-                          titre("Le même écart d'âge dans tous les segments", "Stress moyen par âge et par segment · lire chaque colonne de haut en bas"),
-                          "Segment de temps passé"))
-    st.markdown("""
-- En S4, le stress passe de **18,9** chez les 13–17 ans à **26,6** chez les 55–65 ans.
-- À temps égal, le stress augmente de **+1,2 point par tranche de 10 ans**, et le même écart se retrouve dans tous les segments.
-""")
-    retenir("**à usage égal, ce sont les plus âgés qui sont les plus stressés.** L'âge apporte une information en plus du temps passé.")
+    with onglet_egal:
+        st.subheader("D'après l'âge, à usage égal, qui est le plus stressé ?")
+        age = R["age_s4"]
+        indicateurs(("Stress des 13–17 ans en S4", fr(age.loc["13–17 ans", "stress"]), None),
+                    ("Stress des 55–65 ans en S4", fr(age.loc["55–65 ans", "stress"]), None),
+                    ("Stress en plus par tranche de 10 ans", f"+{fr(R['pente_age'])} pt", "À temps passé égal"))
+        donnees = age.reset_index()
+        donnees["etiquette"] = donnees["stress"].map(fr)
+        donnees["minutes_txt"] = donnees["minutes"].map(lambda v: f"{fr(v, 0)} min")
+        montrer(barres_simples(donnees, "tranche_age", "stress", "etiquette",
+                               titre("À usage égal, le stress augmente avec l'âge", "Stress moyen dans le segment S4 (188 à 240 min par jour)"),
+                               None, "Stress moyen (0–40)", TRANCHES_AGE, [0, 30],
+                               [alt.Tooltip("tranche_age:N", title="Âge"), alt.Tooltip("etiquette:N", title="Stress moyen"),
+                                alt.Tooltip("minutes_txt:N", title="Temps moyen par jour")]))
+        grille = R["grille_age"].reset_index()
+        grille["court"] = segment_vers_court(grille["segment"])
+        grille["etiquette"] = grille["stress"].map(fr)
+        grille["n_txt"] = grille["n"].map(lambda v: fr(v, 0))
+        montrer(carte_chaleur(grille, "court", "tranche_age", "stress", "etiquette", COURTS, TRANCHES_AGE, [0, 40], "Stress moyen", 22,
+                              [alt.Tooltip("tranche_age:N", title="Âge"), alt.Tooltip("segment:N", title="Segment"),
+                               alt.Tooltip("etiquette:N", title="Stress moyen"), alt.Tooltip("n_txt:N", title="Utilisateurs")],
+                              titre("Le même écart d'âge dans tous les segments", "Stress moyen par âge et par segment"),
+                              "Segment de temps passé"))
+        st.markdown("À temps égal, le stress augmente de **+1,2 point par tranche de 10 ans**, de 18,9 chez les 13–17 ans à 26,6 chez les 55–65 ans en S4, et le même écart se retrouve dans tous les segments.")
+        retenir("À usage égal, ce sont les plus âgés qui sont les plus stressés : l'âge apporte une information en plus du temps passé.")
 
-    st.header("Les plus jeunes passent-ils plus de temps sur Instagram ?")
-    exposition = R["exposition"].reset_index()
-    exposition["etiquette"] = exposition["part_3h_ou_plus"].map(lambda v: f"{fr(v)} %")
-    exposition["minutes_txt"] = exposition["minutes"].map(lambda v: f"{fr(v, 0)} min")
-    c1, c2 = st.columns(2)
-    c1.metric("13–17 ans à 3 h ou plus par jour", exposition.loc[0, "etiquette"])
-    c2.metric("55–65 ans à 3 h ou plus par jour", exposition.loc[len(exposition) - 1, "etiquette"])
-    montrer(barres_simples(exposition, "tranche_age", "part_3h_ou_plus", "etiquette",
-                           titre("Plus on est jeune, plus on passe de temps sur Instagram", "Part des utilisateurs qui y passent 3 h ou plus par jour"),
-                           None, "Utilisateurs à 3 h ou plus par jour", TRANCHES_AGE, [0, 75],
-                           [alt.Tooltip("tranche_age:N", title="Âge"), alt.Tooltip("etiquette:N", title="À 3 h ou plus"),
-                            alt.Tooltip("minutes_txt:N", title="Temps moyen par jour")], axe_y=AXE_POURCENT))
-    st.markdown("**63 %** des 13–17 ans passent 3 h ou plus par jour sur Instagram, contre **43 %** des 55–65 ans. Le temps moyen baisse de 223 à 159 minutes par jour.")
-    conclusion_produit("les plus jeunes sont **les plus exposés** en temps passé. Ce sont eux que les outils de limitation de temps touchent le plus souvent, et ils incluent des **mineurs**, qui demandent des précautions particulières.")
-    st.caption("Source : [question écrite à l'Assemblée nationale citant le rapport « Enfants et écrans » (2024)](https://www.assemblee-nationale.fr/dyn/16/questions/QANR5L16QE18298.pdf) — chez les 16–19 ans, le temps d'écran dépasse les cinq heures ; les experts évoquent la nocivité des réseaux sociaux, « facteur de risque » de dépression ou d'anxiété en cas de « vulnérabilité préexistante ».")
-    retenir("deux effets opposés : les jeunes sont **plus exposés en temps**, les plus âgés sont **plus stressés à temps égal**.")
+    with onglet_exposition:
+        st.subheader("Les plus jeunes passent-ils plus de temps sur Instagram ?")
+        exposition = R["exposition"].reset_index()
+        exposition["etiquette"] = exposition["part_3h_ou_plus"].map(lambda v: f"{fr(v)} %")
+        exposition["minutes_txt"] = exposition["minutes"].map(lambda v: f"{fr(v, 0)} min")
+        indicateurs(("13–17 ans à 3 h ou plus par jour", exposition.loc[0, "etiquette"], None),
+                    ("55–65 ans à 3 h ou plus par jour", exposition.loc[len(exposition) - 1, "etiquette"], None))
+        montrer(barres_simples(exposition, "tranche_age", "part_3h_ou_plus", "etiquette",
+                               titre("Plus on est jeune, plus on passe de temps sur Instagram", "Part des utilisateurs à 3 h ou plus par jour"),
+                               None, "Utilisateurs à 3 h ou plus par jour", TRANCHES_AGE, [0, 75],
+                               [alt.Tooltip("tranche_age:N", title="Âge"), alt.Tooltip("etiquette:N", title="À 3 h ou plus"),
+                                alt.Tooltip("minutes_txt:N", title="Temps moyen par jour")], axe_y=AXE_POURCENT))
+        st.markdown("Le temps moyen baisse régulièrement avec l'âge, de 223 à 159 minutes par jour.")
+        conclusion_produit("Les plus jeunes sont les plus exposés en temps passé. Ce sont eux que les outils de limitation de temps touchent le plus souvent, et ils incluent des mineurs, qui demandent des précautions particulières.")
+        st.caption("Source : [question écrite à l'Assemblée nationale citant le rapport « Enfants et écrans » (2024)](https://www.assemblee-nationale.fr/dyn/16/questions/QANR5L16QE18298.pdf) — chez les 16–19 ans, le temps d'écran dépasse les cinq heures ; les réseaux sociaux sont un « facteur de risque » de dépression ou d'anxiété en cas de « vulnérabilité préexistante ».")
+        retenir("Deux effets opposés : les jeunes sont plus exposés en temps, les plus âgés sont plus stressés à temps égal.")
 
 
 def page_habitudes():
-    st.title("4 · Les habitudes d'utilisation")
-    st.markdown("Ces parties comparent des **façons d'utiliser Instagram**. Chaque fois, on vérifie si l'écart tient encore **à temps passé égal**, c'est-à-dire en comparant des utilisateurs qui passent le même temps sur l'application.")
-
-    st.header("4.1 — Les moins heureux ont un usage plus intensif")
+    entete("4 · Les habitudes d'utilisation", "Au-delà du temps passé, la façon d'utiliser Instagram est-elle liée au bien-être ?")
     usage = R["usage_bonheur"]
-    moins, plus = R["n_moins_plus"]
-    st.markdown(f"Comparaison des **moins heureux** (bonheur de 1 ou 2, {fr(moins, 0)} utilisateurs) et des **plus heureux** (bonheur de 9 ou 10, {fr(plus, 0)} utilisateurs).")
-    donnees = usage.reset_index().melt(id_vars="comportement", value_vars=["différence (%)", "différence à temps égal (%)"],
-                                       var_name="serie", value_name="ecart").dropna()
-    donnees["serie"] = donnees["serie"].map({"différence (%)": "Différence brute", "différence à temps égal (%)": "Différence à temps passé égal"})
-    donnees["etiquette"] = donnees["ecart"].map(lambda v: pourcent(v, 0, signe=True))
-    ordre = list(usage.index)
-    base = alt.Chart(donnees).encode(
-        y=alt.Y("comportement:N", sort=ordre, title=None, axis=alt.Axis(labelLimit=320)),
-        yOffset=alt.YOffset("serie:N", sort=["Différence brute", "Différence à temps passé égal"]),
-        x=alt.X("ecart:Q", title="Écart des moins heureux par rapport aux plus heureux", scale=alt.Scale(domain=[-70, 105]), axis=AXE_POURCENT))
-    barres = base.mark_bar(size=11).encode(
-        color=alt.Color("serie:N", scale=alt.Scale(domain=["Différence brute", "Différence à temps passé égal"], range=[BLEU, ORANGE]), title=None),
-        tooltip=[alt.Tooltip("comportement:N", title="Comportement"), alt.Tooltip("serie:N", title="Mesure"), alt.Tooltip("etiquette:N", title="Écart")])
-    textes = base.mark_text(fontSize=10.5, color=INK2, dx=6, align="left").encode(text="etiquette:N").transform_filter("datum.ecart >= 0")
-    textes_neg = base.mark_text(fontSize=10.5, color=INK2, dx=-6, align="right").encode(text="etiquette:N").transform_filter("datum.ecart < 0")
-    regle = alt.Chart(pd.DataFrame({"x": [0]})).mark_rule(color=AXIS).encode(x="x:Q")
-    montrer((regle + barres + textes + textes_neg).properties(
-        title=titre("Plus d'actions chez les moins heureux… parce qu'ils restent plus longtemps",
-                    "Écart en % entre moins heureux et plus heureux · en orange : à temps passé égal"), height=520))
-    chiffres(usage)
-    st.markdown("""
-- Les moins heureux **utilisent davantage toutes les fonctionnalités** : sessions, Reels, stories, likes, commentaires, messages. Le vrai constat est un **usage beaucoup plus intensif**, d'abord en temps (+86 %).
-- Les plus heureux font moins d'actions mais ont un **score d'engagement deux fois plus élevé**. Ce score mesure surtout les interactions **par minute**, élevées chez ceux qui restent peu de temps.
-- **À temps passé égal, les écarts deviennent presque nuls** (moins de 5 %), y compris celui du score d'engagement (barres orange).
-""")
-    lien_temps, lien_minute = R["engagement_liens"]
-    st.caption(f"Le score d'engagement est corrélé à {fr(lien_temps, 2)} avec le temps passé et à {fr(lien_minute, 2)} avec le nombre de likes et commentaires par minute.")
-    retenir("les moins heureux ont un usage **plus intensif**, mais à temps égal ils agissent exactement comme les plus heureux. Ce n'est pas la qualité des interactions qui les distingue, c'est **le temps passé**.")
-
-    st.header("4.2 — Consommateurs ou créateurs de contenu ?")
     createurs = R["createurs"]
-    donnees = createurs.reset_index()
-    donnees["profil_court"] = donnees["profil_publication"].astype(str).str.split(" ").str[0]
-    long_b = donnees.melt(id_vars=["profil_publication", "profil_court"], value_vars=["bonheur", "bonheur_egal"], var_name="serie", value_name="valeur")
-    long_s = donnees.melt(id_vars=["profil_publication", "profil_court"], value_vars=["stress", "stress_egal"], var_name="serie", value_name="valeur")
-    for longue in (long_b, long_s):
-        longue["serie"] = longue["serie"].map({"bonheur": "Moyenne brute", "stress": "Moyenne brute",
-                                               "bonheur_egal": "À temps passé et âge égaux", "stress_egal": "À temps passé et âge égaux"})
-        longue["etiquette"] = longue["valeur"].map(fr)
-    series = ["Moyenne brute", "À temps passé et âge égaux"]
-    infobulle = [alt.Tooltip("profil_publication:N", title="Profil"), alt.Tooltip("serie:N", title="Mesure"), alt.Tooltip("etiquette:N", title="Valeur")]
-    gauche, droite = st.columns(2)
-    with gauche:
-        montrer(barres_groupees(long_b, "profil_court", "serie", "valeur", "etiquette", ["Consommateur", "Intermédiaire", "Créateur"], series, [BLEU, ORANGE],
-                                titre("Bonheur selon le profil", "Échelle de 1 à 10"), None, "Bonheur moyen (1–10)", [0, 7], infobulle))
-    with droite:
-        montrer(barres_groupees(long_s, "profil_court", "serie", "valeur", "etiquette", ["Consommateur", "Intermédiaire", "Créateur"], series, [BLEU, ORANGE],
-                                titre("Stress selon le profil", "Échelle de 0 à 40"), None, "Stress moyen (0–40)", [0, 30], infobulle))
-    affichage = createurs[["part", "age", "minutes", "bonheur", "tres_heureux", "tres_malheureux", "stress"]].rename(columns={
-        "part": "part des utilisateurs (%)", "age": "âge moyen", "minutes": "temps par jour (min)", "bonheur": "bonheur",
-        "tres_heureux": "très heureux (%)", "tres_malheureux": "très malheureux (%)", "stress": "stress"}).rename_axis("profil")
-    tableau(affichage)
-    st.markdown("""
-- Au premier regard, les **consommateurs** semblent plus heureux (6,0 contre 5,0) et moins stressés que les **créateurs**.
-- Mais les créateurs passent **deux fois plus de temps** sur Instagram (257 min contre 117) et sont **beaucoup plus jeunes** (30 ans contre 45) : les moins de 25 ans publient environ 10 fois par semaine, contre 4 à 5 fois au-delà.
-- **À temps passé et âge égaux, il ne reste aucune différence** de bonheur ni de stress (barres orange).
-""")
-    st.caption("Source : [Valkenburg, van Driel & Beyens, 2022, New Media & Society](https://journals.sagepub.com/doi/10.1177/14614448211065425) — sur 40 études, la plupart ne confirment pas d'effet différent de l'usage actif (publier) et passif (regarder) sur le bien-être.")
-    retenir("publier ou seulement regarder ne change rien au bien-être : les créateurs semblent moins heureux parce qu'ils sont **plus jeunes et passent plus de temps** sur l'application.")
-
-    st.header("4.3 — Activité privée ou activité publique ?")
-    st.markdown("""
-- **Activité privée :** les messages privés envoyés. **Activité publique :** les likes et les commentaires. Le fichier ne contient pas de colonne « story privée » ni « partages ».
-- La **part d'activité privée** est la part des messages dans l'ensemble des interactions (messages, likes et commentaires), en 5 groupes de taille égale, du plus public (Q1) au plus privé (Q5).
-- Le **réglage du compte** (public, amis seulement, privé) est comparé de la même façon.
-""")
-    series = ["Moyenne brute", "À temps passé égal", "Utilisateurs à environ 90 min par jour"]
-    couleurs = [BLEU, ORANGE, AQUA]
-
-    def longue(table, variable, cle_groupe):
-        donnees = table.reset_index().rename(columns={"index": cle_groupe})
-        if cle_groupe not in donnees.columns:
-            donnees = donnees.rename(columns={donnees.columns[0]: cle_groupe})
-        resultat = donnees.melt(id_vars=cle_groupe, value_vars=[variable, f"{variable}_temps_egal", f"{variable}_vers_90"],
-                                var_name="serie", value_name="valeur")
-        resultat["serie"] = resultat["serie"].map({variable: series[0], f"{variable}_temps_egal": series[1], f"{variable}_vers_90": series[2]})
-        resultat["etiquette"] = resultat["valeur"].map(fr)
-        return resultat
-
     quintiles = R["prive"]["quintile_prive"]
-    comptes = R["prive"]["privacy_setting_level"]
-    infobulle_q = [alt.Tooltip("groupe:N", title="Groupe"), alt.Tooltip("serie:N", title="Mesure"), alt.Tooltip("etiquette:N", title="Valeur")]
-    gauche, droite = st.columns(2)
-    with gauche:
-        montrer(barres_groupees(longue(quintiles, "stress", "groupe"), "groupe", "serie", "valeur", "etiquette", QUINTILES, series, couleurs,
-                                titre("Stress selon la part d'activité privée", "Échelle de 0 à 40"), None, "Stress moyen (0–40)", [0, 30], infobulle_q, angle=-20))
-    with droite:
-        montrer(barres_groupees(longue(quintiles, "bonheur", "groupe"), "groupe", "serie", "valeur", "etiquette", QUINTILES, series, couleurs,
-                                titre("Bonheur selon la part d'activité privée", "Échelle de 1 à 10"), None, "Bonheur moyen (1–10)", [0, 8], infobulle_q, angle=-20))
-    gauche, droite = st.columns(2)
-    with gauche:
-        montrer(barres_groupees(longue(comptes, "stress", "groupe"), "groupe", "serie", "valeur", "etiquette", list(COMPTES.values()), series, couleurs,
-                                titre("Stress selon le réglage du compte", "Échelle de 0 à 40"), None, "Stress moyen (0–40)", [0, 30], infobulle_q))
-    with droite:
-        montrer(barres_groupees(longue(comptes, "bonheur", "groupe"), "groupe", "serie", "valeur", "etiquette", list(COMPTES.values()), series, couleurs,
-                                titre("Bonheur selon le réglage du compte", "Échelle de 1 à 10"), None, "Bonheur moyen (1–10)", [0, 8], infobulle_q))
-    affichage = quintiles[["minutes", "stress", "bonheur", "stress_temps_egal", "bonheur_temps_egal"]].rename(columns={
-        "minutes": "temps par jour (min)", "stress_temps_egal": "stress à temps égal", "bonheur_temps_egal": "bonheur à temps égal"}).rename_axis("groupe")
-    tableau(affichage)
-    st.markdown(f"""
-- En moyenne brute, les utilisateurs à l'activité **la plus privée** (Q5) semblent deux fois moins stressés et plus heureux. Mais ils passent **2,5 fois moins de temps** sur Instagram (87 min contre 226) : ils envoient surtout des messages, et likent ou commentent peu.
-- **À temps passé égal, les cinq groupes sont identiques** (stress de 20,0, bonheur de 5,5). Chez les {fr(R['n_vers_90'], 0)} utilisateurs qui passent environ 90 min par jour, le stress est de 10 et le bonheur de 6,0 dans tous les groupes.
-- Le **réglage du compte** ne change rien : comptes publics, « amis seulement » et privés ont le même stress, le même bonheur et le même temps passé.
-""")
-    retenir("le caractère privé ou public de l'activité **n'est pas lié au bien-être**. L'écart apparent vient du temps passé.")
+    connexion, meme = R["connexion"], R["connexion_meme_temps"]
 
-    st.header("4.4 — Utilisateurs « réflexe » ou « immersion » ?")
-    mediane_sessions, mediane_duree = R["medianes_connexion"]
-    st.markdown(f"""
-- **Profil réflexe :** beaucoup de connexions courtes, soit plus de {fr(mediane_sessions, 0)} sessions par jour (la médiane) **et** des sessions de moins de {fr(mediane_duree)} min (la médiane).
-- **Profil immersion :** peu de connexions mais longues, soit moins de {fr(mediane_sessions, 0)} sessions par jour **et** des sessions de plus de {fr(mediane_duree)} min.
-""")
-    connexion = R["connexion"]
-    meme = R["connexion_meme_temps"]
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Stress des « réflexe »", f"{fr(connexion.loc['Réflexe', 'stress'])} / 40")
-    c2.metric("Stress des « immersion »", f"{fr(connexion.loc['Immersion', 'stress'])} / 40")
-    c3.metric("Écart de stress", pourcent((connexion.loc["Réflexe", "stress"] / connexion.loc["Immersion", "stress"] - 1) * 100, 0, signe=True))
-    donnees = pd.DataFrame({
-        "profil": ["Réflexe", "Immersion", "Réflexe", "Immersion"],
-        "serie": ["Tous les utilisateurs du profil"] * 2 + ["Même temps total (2 à 3 h par jour)"] * 2,
-        "stress": [connexion.loc["Réflexe", "stress"], connexion.loc["Immersion", "stress"], meme.loc["Réflexe", "stress"], meme.loc["Immersion", "stress"]],
-        "minutes": [connexion.loc["Réflexe", "minutes"], connexion.loc["Immersion", "minutes"], meme.loc["Réflexe", "minutes"], meme.loc["Immersion", "minutes"]],
-    })
-    donnees["etiquette"] = donnees["stress"].map(fr)
-    donnees["minutes_txt"] = donnees["minutes"].map(lambda v: f"{fr(v, 0)} min")
-    gauche, droite = st.columns([1.3, 1])
-    with gauche:
-        montrer(barres_groupees(donnees, "profil", "serie", "stress", "etiquette", ["Réflexe", "Immersion"],
-                            ["Tous les utilisateurs du profil", "Même temps total (2 à 3 h par jour)"], [BLEU, ORANGE],
-                                titre("Les « réflexe » sont plus stressés… parce qu'ils passent plus de temps au total",
-                                      "Stress moyen · en orange : utilisateurs qui passent le même temps total sur Instagram"),
-                                None, "Stress moyen (0–40)", [0, 30],
-                                [alt.Tooltip("profil:N", title="Profil"), alt.Tooltip("serie:N", title="Groupe"),
-                                 alt.Tooltip("etiquette:N", title="Stress moyen"), alt.Tooltip("minutes_txt:N", title="Temps moyen par jour")]))
-    with droite:
+    st.markdown("Pour chaque habitude, on compare l'écart **brut** et l'écart **à temps passé égal**, c'est-à-dire entre utilisateurs qui passent le même temps sur l'application.")
+    synthese = pd.DataFrame([
+        ("4.1 · Moins heureux / plus heureux", "sessions par jour",
+         pourcent(usage.loc["Sessions par jour", "différence (%)"], 0, signe=True),
+         pourcent(usage.loc["Sessions par jour", "différence à temps égal (%)"], 0, signe=True)),
+        ("4.2 · Créateurs / consommateurs", "bonheur (1–10)",
+         points(createurs["bonheur"].iloc[2] - createurs["bonheur"].iloc[0]),
+         points(createurs["bonheur_egal"].iloc[2] - createurs["bonheur_egal"].iloc[0]) + " (à âge égal aussi)"),
+        ("4.3 · Activité la plus privée / la plus publique", "stress (0–40)",
+         points(quintiles["stress"].iloc[4] - quintiles["stress"].iloc[0]),
+         points(quintiles["stress_temps_egal"].iloc[4] - quintiles["stress_temps_egal"].iloc[0])),
+        ("4.4 · Profil réflexe / profil immersion", "stress (0–40)",
+         points(connexion.loc["Réflexe", "stress"] - connexion.loc["Immersion", "stress"]),
+         points(meme.loc["Réflexe", "stress"] - meme.loc["Immersion", "stress"])),
+    ], columns=["comparaison", "indicateur", "écart brut", "écart à temps passé égal"]).set_index("comparaison")
+    st.markdown("**Synthèse des quatre comparaisons**")
+    st.table(synthese)
+    retenir("Les moins heureux et les plus stressés ont un usage plus intensif : plus de temps passé, plus d'actions, plus de publications, une activité plus publique et des connexions plus fréquentes.")
+
+    onglets = st.tabs(["4.1 · Intensité d'usage", "4.2 · Créer ou consommer", "4.3 · Privé ou public", "4.4 · Réflexe ou immersion"])
+
+    with onglets[0]:
+        st.subheader("Les moins heureux ont-ils un usage plus intensif ?")
+        moins, plus = R["n_moins_plus"]
+        st.caption(f"Moins heureux : bonheur de 1 ou 2 ({fr(moins, 0)} utilisateurs) · plus heureux : bonheur de 9 ou 10 ({fr(plus, 0)} utilisateurs).")
+        indicateurs(("Temps passé par jour", f"{fr(usage.loc['Temps total sur Instagram (min par jour)', 'moins heureux (1–2)'], 0)} / {fr(usage.loc['Temps total sur Instagram (min par jour)', 'plus heureux (9–10)'], 0)} min",
+                     "Moins heureux / plus heureux"),
+                    ("Écart brut sur les sessions", pourcent(usage.loc["Sessions par jour", "différence (%)"], 0, signe=True), None),
+                    ("Écart à temps passé égal", pourcent(usage.loc["Sessions par jour", "différence à temps égal (%)"], 0, signe=True), None))
+        donnees = usage.reset_index().melt(id_vars="comportement", value_vars=["différence (%)", "différence à temps égal (%)"],
+                                           var_name="serie", value_name="ecart").dropna()
+        donnees["serie"] = donnees["serie"].map({"différence (%)": "Écart brut", "différence à temps égal (%)": "Écart à temps passé égal"})
+        donnees["etiquette"] = donnees["ecart"].map(lambda v: pourcent(v, 0, signe=True))
+        series = ["Écart brut", "Écart à temps passé égal"]
+        base = alt.Chart(donnees).encode(
+            y=alt.Y("comportement:N", sort=list(usage.index), title=None, axis=alt.Axis(labelLimit=320)),
+            yOffset=alt.YOffset("serie:N", sort=series),
+            x=alt.X("ecart:Q", title="Écart des moins heureux par rapport aux plus heureux", scale=alt.Scale(domain=[-70, 105]), axis=AXE_POURCENT))
+        barres = base.mark_bar(size=11).encode(
+            color=alt.Color("serie:N", scale=alt.Scale(domain=series, range=[BLEU, ORANGE]), title=None),
+            tooltip=[alt.Tooltip("comportement:N", title="Comportement"), alt.Tooltip("serie:N", title="Mesure"), alt.Tooltip("etiquette:N", title="Écart")])
+        textes = base.mark_text(fontSize=10.5, color=INK2, dx=6, align="left").encode(text="etiquette:N").transform_filter("datum.ecart >= 0")
+        textes_neg = base.mark_text(fontSize=10.5, color=INK2, dx=-6, align="right").encode(text="etiquette:N").transform_filter("datum.ecart < 0")
+        regle = alt.Chart(pd.DataFrame({"x": [0]})).mark_rule(color=AXIS).encode(x="x:Q")
+        montrer((regle + barres + textes + textes_neg).properties(
+            title=titre("Les moins heureux utilisent davantage toutes les fonctionnalités",
+                        "Écart en % entre moins heureux et plus heureux · en orange : à temps passé égal"), height=500))
+        lien_temps, lien_minute = R["engagement_liens"]
         st.markdown(f"""
-- Les utilisateurs « réflexe » sont **nettement plus stressés** que les « immersion » ({fr(connexion.loc['Réflexe', 'stress'])} contre {fr(connexion.loc['Immersion', 'stress'])}).
-- Mais ils passent aussi **beaucoup plus de temps au total** sur Instagram ({fr(connexion.loc['Réflexe', 'minutes'], 0)} min contre {fr(connexion.loc['Immersion', 'minutes'], 0)} par jour), car le temps total est égal aux sessions multipliées par leur durée.
-- **À temps total égal (2 à 3 h par jour), l'écart disparaît** : {fr(meme.loc['Réflexe', 'stress'])} contre {fr(meme.loc['Immersion', 'stress'])}. La durée des sessions n'a donc pas de lien propre avec le stress.
+- Les moins heureux ont **plus de sessions, de Reels, de stories, de likes, de commentaires et de messages**, et passent **{pourcent(usage.loc['Temps total sur Instagram (min par jour)', 'différence (%)'], 0)} de temps en plus** sur l'application.
+- Les plus heureux font **moins d'actions**, mais ont un **score d'engagement deux fois plus élevé** : ce score mesure surtout les interactions **par minute** (corrélation de {fr(lien_minute, 2)}), élevées chez ceux qui restent peu de temps (corrélation de {fr(lien_temps, 2)} avec le temps passé).
+- À temps passé égal (barres orange), les écarts sont presque nuls (moins de 5 %), y compris pour le score d'engagement.
 """)
-    affichage = connexion.rename(columns={"n": "utilisateurs", "sessions": "sessions par jour", "duree": "durée d'une session (min)",
-                                          "minutes": "temps total (min par jour)", "stress": "stress (0–40)", "bonheur": "bonheur (1–10)"}).rename_axis("profil")
-    tableau(affichage)
-    conclusion_produit("ouvrir Instagram très souvent va avec plus de stress **parce que cela fait plus de temps au total**. Un rappel doit compter **le temps cumulé de la journée**, pas seulement la durée d'une session.")
-    retenir("ce n'est pas la façon de se connecter qui compte, c'est **le temps total** passé chaque jour.")
+        chiffres(usage, titre="Voir le détail des comportements")
+        retenir("Les moins heureux ont un usage beaucoup plus intensif, sur toutes les fonctionnalités ; les plus heureux agissent moins, avec un score d'engagement deux fois plus élevé.")
+
+    with onglets[1]:
+        st.subheader("Les créateurs de contenu sont-ils moins heureux que les consommateurs ?")
+        st.caption("Consommateur : 0 à 3 publications par semaine · intermédiaire : 4 à 7 · créateur : 8 et plus.")
+        indicateurs(("Bonheur : consommateurs / créateurs", f"{fr(createurs['bonheur'].iloc[0])} / {fr(createurs['bonheur'].iloc[2])}", None),
+                    ("Stress : consommateurs / créateurs", f"{fr(createurs['stress'].iloc[0])} / {fr(createurs['stress'].iloc[2])}", None),
+                    ("Temps passé : consommateurs / créateurs", f"{fr(createurs['minutes'].iloc[0], 0)} / {fr(createurs['minutes'].iloc[2], 0)} min", None))
+        profils_cc = ["Consommateurs", "Créateurs"]
+        couleurs_cc = alt.Scale(domain=profils_cc, range=[BLEU, ROUGE])
+        repartition = R["createurs_repartition"].reset_index().melt(id_vars="profil", var_name="segment", value_name="part")
+        repartition["court"] = segment_vers_court(repartition["segment"])
+        repartition["etiquette"] = repartition["part"].map(lambda v: f"{fr(v, 0)} %")
+        par_segment = R["createurs_segments"].reset_index()
+        par_segment["court"] = segment_vers_court(par_segment["segment"])
+        par_segment["bonheur_txt"] = par_segment["bonheur"].map(lambda v: fr(v, 2))
+        par_segment["n_txt"] = par_segment["n"].map(lambda v: fr(v, 0))
+        gauche, droite = st.columns(2)
+        with gauche:
+            base = alt.Chart(repartition).encode(
+                x=alt.X("court:N", sort=COURTS, title="Segment de temps passé (S1 : moins de 20 min · S6 : plus de 290 min)",
+                        axis=alt.Axis(labelAngle=0)),
+                xOffset=alt.XOffset("profil:N", sort=profils_cc),
+                y=alt.Y("part:Q", title="Part du profil", scale=alt.Scale(domain=[0, 55]), axis=AXE_POURCENT))
+            montrer((base.mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
+                color=alt.Color("profil:N", scale=couleurs_cc, title=None),
+                tooltip=[alt.Tooltip("profil:N", title="Profil"), alt.Tooltip("segment:N", title="Segment"),
+                         alt.Tooltip("etiquette:N", title="Part du profil")])
+                     + base.mark_text(dy=-8, fontSize=10.5, color=INK2).encode(text="etiquette:N")).properties(
+                title=titre("1. Les créateurs passent beaucoup plus de temps sur Instagram",
+                            "Répartition de chaque profil entre les six segments de temps passé"), height=340))
+        with droite:
+            base = alt.Chart(par_segment).encode(
+                x=alt.X("court:N", sort=COURTS, title="Segment de temps passé (S1 : moins de 20 min · S6 : plus de 290 min)",
+                        axis=alt.Axis(labelAngle=0)),
+                y=alt.Y("bonheur:Q", title="Bonheur moyen (1–10)", scale=alt.Scale(domain=[1, 10])),
+                color=alt.Color("profil:N", scale=couleurs_cc, title=None))
+            montrer((base.mark_line(strokeWidth=2.5) + base.mark_point(filled=True, size=70, stroke=SURFACE, strokeWidth=1.2, opacity=1).encode(
+                tooltip=[alt.Tooltip("profil:N", title="Profil"), alt.Tooltip("segment:N", title="Segment"),
+                         alt.Tooltip("bonheur_txt:N", title="Bonheur moyen"), alt.Tooltip("n_txt:N", title="Utilisateurs")])).properties(
+                title=titre("2. Dans un même segment de temps, les créateurs sont aussi heureux",
+                            "Bonheur moyen de chaque profil, segment par segment"), height=340))
+        st.markdown(f"""
+- Les consommateurs comptent **plus de très heureux** que les créateurs ({fr(createurs['tres_heureux'].iloc[0], 0)} % contre {fr(createurs['tres_heureux'].iloc[2], 0)} %) et **moins de très malheureux** ({fr(createurs['tres_malheureux'].iloc[0], 0)} % contre {fr(createurs['tres_malheureux'].iloc[2], 0)} %).
+- **Graphique 1 :** les créateurs, **plus jeunes** ({fr(createurs['age'].iloc[2], 0)} ans contre {fr(createurs['age'].iloc[0], 0)}), se concentrent dans les segments où l'on passe le plus de temps : {fr(R['createurs_repartition'].loc['Créateurs', 'S6 Très intensif'], 0)} % d'entre eux en S6, contre {fr(R['createurs_repartition'].loc['Consommateurs', 'S6 Très intensif'], 0)} % des consommateurs.
+- **Graphique 2 :** dans un même segment de temps, les créateurs sont **aussi heureux, voire un peu plus**, car ils sont plus jeunes ; à temps passé et âge égaux, il ne reste aucune différence de bonheur ni de stress.
+""")
+        affichage = createurs[["part", "age", "minutes", "bonheur", "tres_heureux", "tres_malheureux", "stress"]].rename(columns={
+            "part": "part des utilisateurs (%)", "age": "âge moyen", "minutes": "temps par jour (min)",
+            "tres_heureux": "très heureux (%)", "tres_malheureux": "très malheureux (%)"}).rename_axis("profil")
+        chiffres(affichage, titre="Voir le détail des trois profils")
+        retenir("Les consommateurs sont plus heureux et moins stressés que les créateurs ; les créateurs sont plus jeunes et passent deux fois plus de temps sur l'application.")
+
+    with onglets[2]:
+        st.subheader("L'activité privée est-elle liée à un meilleur bien-être que l'activité publique ?")
+        st.caption("Activité privée : messages privés envoyés · activité publique : likes et commentaires · part d'activité privée en 5 groupes de taille égale, du plus public (Q1) au plus privé (Q5).")
+        indicateurs(("Stress : Q5 le plus privé / Q1 le plus public", f"{fr(quintiles['stress'].iloc[4])} / {fr(quintiles['stress'].iloc[0])}", None),
+                    ("Bonheur : Q5 / Q1", f"{fr(quintiles['bonheur'].iloc[4])} / {fr(quintiles['bonheur'].iloc[0])}", None),
+                    ("Temps passé : Q5 / Q1", f"{fr(quintiles['minutes'].iloc[4], 0)} / {fr(quintiles['minutes'].iloc[0], 0)} min", None))
+        series = ["Tous les utilisateurs", "Utilisateurs à environ 90 min par jour"]
+
+        def longue(variable):
+            donnees = quintiles.reset_index().rename(columns={quintiles.index.name or "index": "groupe"})
+            resultat = donnees.melt(id_vars="groupe", value_vars=[variable, f"{variable}_vers_90"], var_name="serie", value_name="valeur")
+            resultat["serie"] = resultat["serie"].map({variable: series[0], f"{variable}_vers_90": series[1]})
+            resultat["etiquette"] = resultat["valeur"].map(fr)
+            return resultat
+
+        infobulle = [alt.Tooltip("groupe:N", title="Groupe"), alt.Tooltip("serie:N", title="Utilisateurs"), alt.Tooltip("etiquette:N", title="Moyenne")]
+        gauche, droite = st.columns(2)
+        with gauche:
+            montrer(barres_groupees(longue("stress"), "groupe", "serie", "valeur", "etiquette", QUINTILES, series, [BLEU, BLEU_CLAIR],
+                                    titre("Stress selon la part d'activité privée", "Échelle de 0 à 40"), None, "Stress moyen (0–40)", [0, 30],
+                                    infobulle, angle=-20))
+        with droite:
+            montrer(barres_groupees(longue("bonheur"), "groupe", "serie", "valeur", "etiquette", QUINTILES, series, [ROUGE, ROUGE_CLAIR],
+                                    titre("Bonheur selon la part d'activité privée", "Échelle de 1 à 10"), None, "Bonheur moyen (1–10)", [0, 8],
+                                    infobulle, angle=-20))
+        st.markdown(f"""
+- Le stress baisse et le bonheur monte surtout dans les deux groupes **les plus privés** (Q4 et Q5) ; de Q1 à Q3, ils changent peu.
+- Les plus privés **likent et commentent deux fois moins**, pour un nombre de messages comparable. Chez les {fr(R['n_vers_90'], 0)} utilisateurs qui passent environ 90 min par jour (barres claires), les cinq groupes ont le même stress et le même bonheur.
+- Le **réglage du compte** (public, amis seulement, privé) ne change ni le stress, ni le bonheur, ni le temps passé.
+""")
+        comptes = R["prive"]["privacy_setting_level"][["minutes", "stress", "bonheur"]]
+        with st.expander("Voir le détail des cinq groupes et du réglage du compte"):
+            tableau(quintiles[["minutes", "stress", "bonheur", "likes", "commentaires", "messages"]].rename(columns={
+                "minutes": "temps par jour (min)", "likes": "likes par jour", "commentaires": "commentaires par jour",
+                "messages": "messages par semaine"}).rename_axis("groupe"))
+            tableau(comptes.rename(columns={"minutes": "temps par jour (min)"}).rename_axis("réglage du compte"))
+        retenir("Les utilisateurs à l'activité la plus privée sont deux fois moins stressés et plus heureux, et passent 2,5 fois moins de temps sur Instagram.")
+
+    with onglets[3]:
+        st.subheader("Se connecter souvent pour de courtes sessions est-il lié à plus de stress ?")
+        mediane_sessions, mediane_duree = R["medianes_connexion"]
+        st.caption(f"Profil réflexe : plus de {fr(mediane_sessions, 0)} sessions par jour et des sessions de moins de {fr(mediane_duree)} min (les médianes) · profil immersion : l'inverse.")
+        indicateurs(("Stress : réflexe / immersion", f"{fr(connexion.loc['Réflexe', 'stress'])} / {fr(connexion.loc['Immersion', 'stress'])}", None),
+                    ("Temps total : réflexe / immersion", f"{fr(connexion.loc['Réflexe', 'minutes'], 0)} / {fr(connexion.loc['Immersion', 'minutes'], 0)} min", None),
+                    ("Stress à temps total égal (2 à 3 h)", f"{fr(meme.loc['Réflexe', 'stress'])} / {fr(meme.loc['Immersion', 'stress'])}", None))
+        donnees = pd.DataFrame({
+            "profil": ["Réflexe", "Immersion", "Réflexe", "Immersion"],
+            "serie": ["Tous les utilisateurs du profil"] * 2 + ["Même temps total (2 à 3 h par jour)"] * 2,
+            "stress": [connexion.loc["Réflexe", "stress"], connexion.loc["Immersion", "stress"], meme.loc["Réflexe", "stress"], meme.loc["Immersion", "stress"]],
+            "minutes": [connexion.loc["Réflexe", "minutes"], connexion.loc["Immersion", "minutes"], meme.loc["Réflexe", "minutes"], meme.loc["Immersion", "minutes"]],
+        })
+        donnees["etiquette"] = donnees["stress"].map(fr)
+        donnees["minutes_txt"] = donnees["minutes"].map(lambda v: f"{fr(v, 0)} min")
+        gauche, droite = st.columns([1.3, 1])
+        with gauche:
+            montrer(barres_groupees(donnees, "profil", "serie", "stress", "etiquette", ["Réflexe", "Immersion"],
+                                    ["Tous les utilisateurs du profil", "Même temps total (2 à 3 h par jour)"], [BLEU, ORANGE],
+                                    titre("Les profils « réflexe » sont nettement plus stressés",
+                                          "Stress moyen (0–40) · en orange : même temps total (2 à 3 h par jour)"),
+                                    None, "Stress moyen (0–40)", [0, 30],
+                                    [alt.Tooltip("profil:N", title="Profil"), alt.Tooltip("serie:N", title="Groupe"),
+                                     alt.Tooltip("etiquette:N", title="Stress moyen"), alt.Tooltip("minutes_txt:N", title="Temps moyen par jour")]))
+        with droite:
+            st.markdown(f"""
+- Les « réflexe » ouvrent Instagram **{fr(connexion.loc['Réflexe', 'sessions'], 0)} fois par jour** pour des sessions de {fr(connexion.loc['Réflexe', 'duree'], 0)} min ; les « immersion », {fr(connexion.loc['Immersion', 'sessions'], 0)} fois pour {fr(connexion.loc['Immersion', 'duree'], 0)} min.
+- Les « réflexe » sont **{pourcent((connexion.loc['Réflexe', 'stress'] / connexion.loc['Immersion', 'stress'] - 1) * 100, 0)} plus stressés**, et y passent plus de temps au total, car le temps total est égal aux sessions multipliées par leur durée.
+- À temps total égal (2 à 3 h par jour), les deux profils ont le même stress : la durée des sessions, seule, n'est pas liée au stress.
+""")
+        affichage = connexion.rename(columns={"n": "utilisateurs", "sessions": "sessions par jour", "duree": "durée d'une session (min)",
+                                              "minutes": "temps total (min par jour)", "stress": "stress (0–40)", "bonheur": "bonheur (1–10)"}).rename_axis("profil")
+        chiffres(affichage, titre="Voir le détail des deux profils")
+        conclusion_produit("Un rappel de temps doit compter le temps cumulé de la journée, pas seulement la durée d'une session.")
+        retenir("Ouvrir Instagram très souvent dans la journée, même pour de courtes sessions, va avec nettement plus de stress que se connecter moins souvent mais plus longtemps.")
 
 
 def page_stress_bonheur():
-    st.title("5 · Stress et bonheur")
-    st.header("Le stress lié à l'usage s'accompagne-t-il d'une baisse de bonheur ?")
-    c1, c2 = st.columns(2)
-    c1.metric("Stress expliqué par le temps passé", f"{fr(R['r2_stress'] * 100, 0)} %")
-    c2.metric("Bonheur expliqué par le temps passé", f"{fr(R['r2_bonheur'] * 100, 0)} %")
+    entete("5 · Stress et bonheur", "Le stress lié à l'usage s'accompagne-t-il d'une baisse de bonheur ?")
+    indicateurs(("Stress expliqué par le temps passé", f"{fr(R['r2_stress'] * 100, 0)} %", None),
+                ("Bonheur expliqué par le temps passé", f"{fr(R['r2_bonheur'] * 100, 0)} %", None))
     data = R["stress_30min"].reset_index()
     data["heures"] = (data["tranche_30min"] + 15) / 60
     data["tranche"] = data["tranche_30min"].map(libelle_tranche)
-    data["stress_txt"] = data["stress"].map(fr)
-    data["bonheur_txt"] = data["bonheur"].map(lambda v: fr(v, 2))
-    x = alt.X("heures:Q", title="Temps passé sur Instagram par jour", axis=AXE_HEURES, scale=alt.Scale(domain=[0, 8.5]))
-    base = alt.Chart(data).encode(x=x)
-    stress = (base.mark_line(color=BLEU, strokeWidth=2).encode(y=alt.Y("stress:Q", title="Stress perçu (0–40)", scale=alt.Scale(domain=[0, 40])))
-              + base.mark_point(filled=True, size=45, color=BLEU, stroke=SURFACE, strokeWidth=1.2, opacity=1).encode(
-                  y="stress:Q", tooltip=[alt.Tooltip("tranche:N", title="Temps par jour"), alt.Tooltip("stress_txt:N", title="Stress moyen")]))
-    zones = alt.Chart(pd.DataFrame({"debut": [0, 290 / 60], "fin": [20 / 60, 8.5]})).mark_rect(color=ORANGE, opacity=0.08).encode(x="debut:Q", x2="fin:Q")
-    notes = alt.Chart(pd.DataFrame({"x": [0.85, 6.8], "y": [9.3, 6.5], "texte": ["chute après 20 min", "chute après 290 min"]})).mark_text(
-        fontSize=11.5, color=INK2).encode(x="x:Q", y="y:Q", text="texte:N")
-    bonheur = (zones + base.mark_line(color=ORANGE, strokeWidth=2).encode(y=alt.Y("bonheur:Q", title="Bonheur déclaré (1–10)", scale=alt.Scale(domain=[1, 10])))
-               + base.mark_point(filled=True, size=45, color=ORANGE, stroke=SURFACE, strokeWidth=1.2, opacity=1).encode(
-                   y="bonheur:Q", tooltip=[alt.Tooltip("tranche:N", title="Temps par jour"), alt.Tooltip("bonheur_txt:N", title="Bonheur moyen")]) + notes)
-    gauche, droite = st.columns(2)
-    with gauche:
-        montrer(stress.properties(title=titre("Le stress monte régulièrement", f"{fr(R['r2_stress'] * 100, 0)} % des écarts expliqués par le temps passé"), height=340))
-    with droite:
-        montrer(bonheur.properties(title=titre("Le bonheur chute aux deux extrêmes", f"{fr(R['r2_bonheur'] * 100, 0)} % des écarts expliqués par le temps passé"), height=340))
+    data["Stress"] = data["stress"] / 40 * 100
+    data["Bonheur"] = data["bonheur"] / 10 * 100
+    longue = data.melt(id_vars=["heures", "tranche", "stress", "bonheur"], value_vars=["Stress", "Bonheur"],
+                       var_name="indicateur", value_name="niveau")
+    longue["valeur_txt"] = np.where(longue["indicateur"] == "Stress", longue["stress"].map(lambda v: f"{fr(v)} sur 40"),
+                                    longue["bonheur"].map(lambda v: f"{fr(v, 2)} sur 10"))
+    longue["niveau_txt"] = longue["niveau"].map(lambda v: f"{fr(v, 0)} %")
+    couleurs = alt.Scale(domain=["Stress", "Bonheur"], range=[BLEU, ROUGE])
+    zones = alt.Chart(pd.DataFrame({"debut": [0, 290 / 60], "fin": [20 / 60, 8.5]})).mark_rect(color=ROUGE, opacity=0.06).encode(x="debut:Q", x2="fin:Q")
+    notes = alt.Chart(pd.DataFrame({"x": [0.95, 6.75], "y": [97, 97], "texte": ["chute du bonheur après 20 min", "chute après 4 h 50"]})).mark_text(
+        fontSize=11, color=INK2).encode(x="x:Q", y="y:Q", text="texte:N")
+    base = alt.Chart(longue).encode(
+        x=alt.X("heures:Q", title="Temps passé sur Instagram par jour", axis=AXE_HEURES, scale=alt.Scale(domain=[0, 8.5])),
+        y=alt.Y("niveau:Q", title="Niveau, en % du maximum de l'échelle", scale=alt.Scale(domain=[0, 100]), axis=AXE_POURCENT),
+        color=alt.Color("indicateur:N", scale=couleurs, title=None))
+    lignes = base.mark_line(strokeWidth=2.5)
+    points = base.mark_point(filled=True, size=55, stroke=SURFACE, strokeWidth=1.2, opacity=1).encode(
+        tooltip=[alt.Tooltip("tranche:N", title="Temps par jour"), alt.Tooltip("indicateur:N", title="Indicateur"),
+                 alt.Tooltip("valeur_txt:N", title="Moyenne"), alt.Tooltip("niveau_txt:N", title="En % du maximum")])
+    fin = longue[longue["heures"] == longue["heures"].max()]
+    etiquettes_fin = alt.Chart(fin).mark_text(align="left", dx=8, fontSize=12.5, fontWeight=600).encode(
+        x="heures:Q", y="niveau:Q", text="indicateur:N", color=alt.Color("indicateur:N", scale=couleurs, legend=None))
+    montrer((zones + notes + lignes + points + etiquettes_fin).properties(
+        title=titre("Quand le temps passé augmente, le stress monte et le bonheur baisse",
+                    "Moyennes par tranche de 30 minutes, ramenées sur une même échelle : stress sur 40, bonheur sur 10"),
+        height=420))
     st.markdown("""
-- Le **stress** monte **régulièrement** avec le temps passé.
-- Le **bonheur** baisse surtout **aux deux extrêmes** (zones orangées) : très vite après les premières minutes, puis au-delà d'environ 4 h 50 par jour. Entre les deux, il change peu.
+- Le **stress** (en bleu) monte **régulièrement** avec le temps passé.
+- Le **bonheur** (en rouge) baisse surtout **aux deux extrêmes** : très vite après les premières minutes, puis au-delà d'environ 4 h 50 par jour. Entre les deux, il change peu.
 - Le temps passé explique **71 %** des écarts de stress, mais seulement **16 %** des écarts de bonheur.
 """)
-    conclusion_produit("il faut **suivre le stress et le bonheur séparément** : un utilisateur peut être très stressé et très heureux à la fois. Le lien principal d'Instagram est avec **le stress**.")
-    st.caption("Source : [le modèle « dual continua » de Keyes (Frontiers in Psychology, 2022)](https://www.frontiersin.org/articles/10.3389/fpsyg.2022.885278/full) — la santé mentale positive et la détresse sont deux dimensions distinctes.")
-    retenir("le stress lié à l'usage s'accompagne d'une baisse de bonheur, mais **beaucoup plus faible et concentrée aux extrêmes**. Stress et bonheur sont deux indicateurs différents.")
+    conclusion_produit("Il faut suivre le stress et le bonheur séparément : un utilisateur peut être très stressé et très heureux à la fois. Le lien principal d'Instagram est avec le stress.")
+    st.caption("Source : [modèle « dual continua » de Keyes (Frontiers in Psychology, 2022)](https://www.frontiersin.org/articles/10.3389/fpsyg.2022.885278/full) — la santé mentale positive et la détresse sont deux dimensions distinctes.")
+    retenir("Le stress lié à l'usage s'accompagne d'une baisse de bonheur, mais beaucoup plus faible et concentrée aux extrêmes.")
 
 
 def page_segmentation():
-    st.title("6 · La segmentation")
-    st.markdown("**Deux informations suffisent** : le **segment de temps passé** (S1 à S6) et le **groupe d'âge**. Toutes deux sont connues pour **tous** les utilisateurs, et aucune n'est une donnée de santé.")
+    entete("6 · La segmentation", "Deux informations suffisent : le segment de temps passé (S1 à S6) et le groupe d'âge, connus pour tous les utilisateurs.")
+    onglet_methode, onglet_carte, onglet_criteres, onglet_profils = st.tabs(
+        ["Méthode", "Carte et simulateur", "Critères de qualité", "Profils de bien-être"])
 
-    st.header("Pourquoi cette méthode ?")
-    st.markdown("""
+    with onglet_methode:
+        st.subheader("Pourquoi des segments par paliers plutôt qu'un regroupement automatique ?")
+        st.markdown("""
 La consigne propose deux voies : **prédire un indicateur de bien-être** à partir de l'usage, ou **regrouper automatiquement** les utilisateurs (*clustering*). Nous avons choisi la première, sous une forme simple : des **segments par paliers** de temps passé, croisés avec l'âge.
 - **Un regroupement automatique retrouverait surtout le temps passé** : les compteurs d'activité en sont presque des copies (partie 2.2), et les habitudes d'utilisation n'ajoutent rien à temps égal (partie 4).
 - **Ses groupes sont difficiles à expliquer** et peuvent changer d'une exécution à l'autre.
-- **Nos segments sont construits pour séparer le stress et le bonheur**, lisibles (« S4 Soutenu, 55–65 ans »), applicables à tous et sans donnée de santé.
+- **Nos segments sont construits pour séparer le stress et le bonheur**, lisibles (« S4 Soutenu, 55–65 ans »), applicables à tous, sans donnée de santé, et calculés en une seule passe sur les 200 000 utilisateurs.
 """)
 
-    st.header("La carte des segments et le simulateur")
-    st.markdown("Entrez l'âge et le temps quotidien d'un **utilisateur fictif** : l'application lui attribue son segment et l'encadre sur la carte.")
-    col_age, col_minutes = st.columns(2)
-    age = col_age.slider("Âge", min_value=13, max_value=65, value=16)
-    minutes = col_minutes.slider("Temps passé sur Instagram par jour (minutes)", min_value=0, max_value=540, value=250, step=5)
-    groupe = pd.cut([age], BORNES_GROUPES_AGE, right=False, labels=GROUPES_AGE)[0]
-    segment = pd.cut([minutes], BORNES_SEGMENTS, right=False, labels=SEGMENTS)[0]
-    ligne = R["segments"].loc[(groupe, segment)]
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Segment", f"{segment.split(' ')[0]} · {groupe}", help=segment)
-    c2.metric("Part en stress élevé dans ce segment", f"{fr(ligne['part_stress_eleve'], 0)} %")
-    c3.metric("Utilisateurs dans ce segment", fr(ligne["n"], 0))
-    if age < 18:
-        st.warning("Utilisateur mineur : seules des protections activées par défaut sont envisageables (rappel de temps, mode sommeil), sans profilage publicitaire.")
-    cases = R["segments"].reset_index()
-    cases["court"] = segment_vers_court(cases["segment"])
-    cases["etiquette"] = cases["part_stress_eleve"].map(lambda v: f"{fr(v, 0)} %")
-    cases["stress_txt"] = cases["stress"].map(fr)
-    cases["n_txt"] = cases["n"].map(lambda v: fr(v, 0))
-    montrer(carte_chaleur(cases, "court", "groupe_age", "part_stress_eleve", "etiquette", COURTS, GROUPES_AGE, [0, 100], "Stress élevé (%)", 55,
-                          [alt.Tooltip("groupe_age:N", title="Âge"), alt.Tooltip("segment:N", title="Segment"),
-                           alt.Tooltip("etiquette:N", title="En stress élevé"), alt.Tooltip("stress_txt:N", title="Stress moyen"),
-                           alt.Tooltip("n_txt:N", title="Utilisateurs")],
-                          titre("Carte des segments : part des utilisateurs en stress élevé",
-                                "24 segments construits uniquement à partir du temps passé et de l'âge · cadre orange : l'utilisateur simulé"),
-                          "Segment de temps passé (S1 : moins de 20 min · S6 : plus de 290 min)",
-                          surligner={"court": segment.split(" ")[0], "groupe_age": groupe}))
-    chiffres(R["segments"].rename_axis(["âge", "segment"]))
-    st.markdown("""
-- Les segments vont de **0 %** à **95 %** d'utilisateurs en stress élevé.
-- Dans un même segment de temps, l'âge change fortement le résultat : en S4 (188 à 240 min), **17 %** de stress élevé chez les 13–17 ans contre **51 %** chez les 55–65 ans.
-""")
-    retenir("une segmentation **simple** (temps passé × âge), **applicable à tous les utilisateurs** et **sans donnée de santé**, qui apporte plus qu'un simple classement par temps passé.")
+    with onglet_carte:
+        st.subheader("Carte des segments et affectation d'un nouvel utilisateur")
+        st.markdown("Entrez l'âge et le temps quotidien d'un **utilisateur fictif** : son segment est encadré sur la carte.")
+        col_age, col_minutes = st.columns(2)
+        age = col_age.slider("Âge", min_value=13, max_value=65, value=16)
+        minutes = col_minutes.slider("Temps passé sur Instagram par jour (minutes)", min_value=0, max_value=540, value=250, step=5)
+        groupe = pd.cut([age], BORNES_GROUPES_AGE, right=False, labels=GROUPES_AGE)[0]
+        segment = pd.cut([minutes], BORNES_SEGMENTS, right=False, labels=SEGMENTS)[0]
+        ligne = R["segments"].loc[(groupe, segment)]
+        indicateurs(("Segment", f"{segment.split(' ')[0]} · {groupe}", segment),
+                    ("Part en stress élevé dans ce segment", f"{fr(ligne['part_stress_eleve'], 0)} %", None),
+                    ("Utilisateurs dans ce segment", fr(ligne["n"], 0), None))
+        if age < 18:
+            st.warning("Utilisateur mineur : seules des protections activées par défaut sont envisageables (rappel de temps, mode sommeil), sans profilage publicitaire.")
+        cases = R["segments"].reset_index()
+        cases["court"] = segment_vers_court(cases["segment"])
+        cases["etiquette"] = cases["part_stress_eleve"].map(lambda v: f"{fr(v, 0)} %")
+        cases["stress_txt"] = cases["stress"].map(fr)
+        cases["n_txt"] = cases["n"].map(lambda v: fr(v, 0))
+        montrer(carte_chaleur(cases, "court", "groupe_age", "part_stress_eleve", "etiquette", COURTS, GROUPES_AGE, [0, 100], "Stress élevé (%)", 55,
+                              [alt.Tooltip("groupe_age:N", title="Âge"), alt.Tooltip("segment:N", title="Segment"),
+                               alt.Tooltip("etiquette:N", title="En stress élevé"), alt.Tooltip("stress_txt:N", title="Stress moyen"),
+                               alt.Tooltip("n_txt:N", title="Utilisateurs")],
+                              titre("Part des utilisateurs en stress élevé, par segment", "24 segments · cadre orange : l'utilisateur simulé"),
+                              "Segment de temps passé (S1 : moins de 20 min · S6 : plus de 290 min)",
+                              surligner={"court": segment.split(" ")[0], "groupe_age": groupe}))
+        st.markdown("Les segments vont de **0 %** à **95 %** d'utilisateurs en stress élevé. Dans un même segment de temps, l'âge change fortement le résultat : en S4, **17 %** chez les 13–17 ans contre **51 %** chez les 55–65 ans.")
+        chiffres(R["segments"].rename_axis(["âge", "segment"]), titre="Voir les 24 segments en chiffres")
+        retenir("Une segmentation simple (temps passé × âge), applicable à tous les utilisateurs et sans donnée de santé, qui apporte plus qu'un simple classement par temps passé.")
 
-    st.header("Nos critères d'une bonne segmentation")
-    st.markdown("Personne ne nous a dit ce qu'est une bonne segmentation : nous fixons nos propres critères, tous **vérifiables sur les données**.")
-    st.table(R["criteres"])
-    retenir("les six critères sont atteints : la segmentation est discriminante, utile au-delà du temps passé, applicable à tous, stable, sans risque d'isoler quelqu'un et sans donnée de santé.")
+    with onglet_criteres:
+        st.subheader("Nos critères d'une bonne segmentation, vérifiés sur les données")
+        st.table(R["criteres"])
+        retenir("Les six critères sont atteints : la segmentation est discriminante, utile au-delà du temps passé, applicable à tous, stable, sans risque d'isoler quelqu'un et sans donnée de santé.")
 
-    st.header("Quatre profils de bien-être selon le segment")
-    st.markdown("On croise le stress (élevé à partir de 27) et le bonheur (élevé à partir de 7).")
-    parts = R["profils"].reset_index().melt(id_vars="segment", var_name="profil", value_name="part")
-    parts["court"] = segment_vers_court(parts["segment"])
-    parts["ordre"] = parts["profil"].map({p: i for i, p in enumerate(PROFILS)})
-    parts = parts.sort_values(["court", "ordre"])
-    parts["fin"] = parts.groupby("court")["part"].cumsum()
-    parts["milieu"] = parts["fin"] - parts["part"] / 2
-    parts["etiquette"] = parts["part"].map(lambda v: f"{fr(v, 0)} %")
-    parts["etiquette_detail"] = parts["part"].map(lambda v: f"{fr(v)} %")
-    base = alt.Chart(parts).encode(x=alt.X("court:N", sort=COURTS, title="Segment de temps passé", axis=alt.Axis(labelAngle=0)))
-    empile = base.mark_bar(size=46, stroke=SURFACE, strokeWidth=1.5).encode(
-        y=alt.Y("part:Q", stack="zero", title="Part des utilisateurs", scale=alt.Scale(domain=[0, 100]), axis=AXE_POURCENT),
-        color=alt.Color("profil:N", scale=alt.Scale(domain=PROFILS, range=RAMPE_4), title=None, legend=alt.Legend(columns=2)),
-        order=alt.Order("ordre:Q", sort="ascending"),
-        tooltip=[alt.Tooltip("segment:N", title="Segment"), alt.Tooltip("profil:N", title="Profil"), alt.Tooltip("etiquette_detail:N", title="Part")])
-    etiquettes = base.mark_text(fontSize=12).encode(
-        y="milieu:Q", text="etiquette:N",
-        color=alt.condition(f"datum.profil == '{PROFILS[0]}'", alt.value(INK), alt.value("white"))).transform_filter("datum.part >= 12")
-    montrer((empile + etiquettes).properties(title=titre("Plus le temps passé augmente, plus le bien-être se dégrade",
-                                                         "Répartition des quatre profils de bien-être par segment · survolez les barres"), height=400))
-    chiffres(R["profils"].rename_axis(index="segment", columns="profil"))
-    st.markdown("""
-- En S1, près de **quatre utilisateurs sur cinq** sont sereins et heureux.
-- En S6, près des **trois quarts** sont stressés et peu heureux.
-- Entre les deux, on passe d'abord par « serein mais peu heureux », puis par « stressé mais heureux ».
-""")
-    conclusion_produit("ces profils décrivent **le parcours du bien-être selon la dose d'usage**. Ils restent une lecture des résultats agrégés : **on ne les attribue pas à un utilisateur**, puisqu'ils reposent sur des données de santé du panel.")
-    retenir("plus la dose d'usage augmente, plus les utilisateurs glissent d'un profil serein et heureux vers un profil stressé et peu heureux.")
+    with onglet_profils:
+        st.subheader("Quatre profils de bien-être selon le segment")
+        st.caption("Stress élevé à partir de 27 sur 40 · bonheur élevé à partir de 7 sur 10.")
+        parts = R["profils"].reset_index().melt(id_vars="segment", var_name="profil", value_name="part")
+        parts["court"] = segment_vers_court(parts["segment"])
+        parts["ordre"] = parts["profil"].map({p: i for i, p in enumerate(PROFILS)})
+        parts = parts.sort_values(["court", "ordre"])
+        parts["fin"] = parts.groupby("court")["part"].cumsum()
+        parts["milieu"] = parts["fin"] - parts["part"] / 2
+        parts["etiquette"] = parts["part"].map(lambda v: f"{fr(v, 0)} %")
+        parts["etiquette_detail"] = parts["part"].map(lambda v: f"{fr(v)} %")
+        base = alt.Chart(parts).encode(x=alt.X("court:N", sort=COURTS, title="Segment de temps passé", axis=alt.Axis(labelAngle=0)))
+        empile = base.mark_bar(size=46, stroke=SURFACE, strokeWidth=1.5).encode(
+            y=alt.Y("part:Q", stack="zero", title="Part des utilisateurs", scale=alt.Scale(domain=[0, 100]), axis=AXE_POURCENT),
+            color=alt.Color("profil:N", scale=alt.Scale(domain=PROFILS, range=RAMPE_4), title=None, legend=alt.Legend(columns=2)),
+            order=alt.Order("ordre:Q", sort="ascending"),
+            tooltip=[alt.Tooltip("segment:N", title="Segment"), alt.Tooltip("profil:N", title="Profil"), alt.Tooltip("etiquette_detail:N", title="Part")])
+        etiquettes = base.mark_text(fontSize=12).encode(
+            y="milieu:Q", text="etiquette:N",
+            color=alt.condition(f"datum.profil == '{PROFILS[0]}'", alt.value(INK), alt.value("white"))).transform_filter("datum.part >= 12")
+        montrer((empile + etiquettes).properties(title=titre("Plus le temps passé augmente, plus le bien-être se dégrade",
+                                                             "Répartition des quatre profils de bien-être par segment"), height=390))
+        st.markdown("En S1, près de **quatre utilisateurs sur cinq** sont sereins et heureux ; en S6, près des **trois quarts** sont stressés et peu heureux. Entre les deux, on passe par « serein mais peu heureux », puis « stressé mais heureux ».")
+        conclusion_produit("Ces profils décrivent le parcours du bien-être selon la dose d'usage. On ne les attribue pas à un utilisateur, puisqu'ils reposent sur des données de santé du panel.")
+        retenir("Plus la dose d'usage augmente, plus les utilisateurs glissent d'un profil serein et heureux vers un profil stressé et peu heureux.")
 
 
 def page_protection():
-    st.title("7 · Protection des données")
-    st.markdown("La consigne nous demande de prendre position, pour les utilisateurs de l'Union européenne et du Royaume-Uni, y compris les moins de 18 ans, sur deux questions.")
+    entete("7 · Protection des données", "Notre position pour les utilisateurs de l'Union européenne et du Royaume-Uni, y compris les moins de 18 ans.")
     st.header("Sur quelles variables les segments peuvent-ils reposer pour du ciblage ?")
     st.markdown("""
-**Uniquement le temps passé par jour et l'âge.**
-- Ce sont des données qu'Instagram détient **pour tous ses utilisateurs**, et ce ne sont **pas des données de santé**.
-- **Les variables de santé et de bien-être sont exclues** (stress, bonheur, sommeil, IMC, tension, tabac, alcool, alimentation, sport) : ce sont des données sensibles au sens de l'article 9 du RGPD ([CNIL](https://www.cnil.fr/fr/definition/donnee-sensible)), données seulement pour l'étude bien-être.
-- **Les autres variables de profil sont exclues aussi** (genre, revenu, emploi, couple, enfants, pays) : elles n'apportent rien, et le RGPD demande de ne traiter que les données nécessaires.
+**Uniquement le temps passé par jour et l'âge**, deux données qu'Instagram détient pour tous ses utilisateurs et qui ne sont pas des données de santé.
+- **Exclues :** les variables de santé et de bien-être (stress, bonheur, sommeil, IMC, tension, tabac, alcool, alimentation, sport), données sensibles au sens de l'article 9 du RGPD ([CNIL](https://www.cnil.fr/fr/definition/donnee-sensible)) et collectées seulement pour l'étude bien-être.
+- **Exclues aussi :** les autres variables de profil (genre, revenu, emploi, couple, enfants, pays), qui n'apportent rien : le RGPD demande de ne traiter que les données nécessaires.
 """)
-    st.header("Placer un utilisateur dans un segment peut-il révéler quelque chose sur sa santé ?")
+    st.header("Un segment peut-il révéler quelque chose sur la santé ?")
     groupe_max, segment_max = R["segment_max"]
     nb, total, part = R["revelateurs"]
-    c1, c2 = st.columns(2)
-    c1.metric("Segment le plus révélateur", f"{segment_max.split(' ')[0]} · {groupe_max}",
-              delta=f"{fr(R['part_max'], 0)} % en stress élevé", delta_color="off")
-    c2.metric("Segments à 80 % de stress élevé ou plus", f"{nb} sur {total}", delta=f"{fr(part, 0)} % des utilisateurs", delta_color="off")
+    indicateurs(("Segment le plus révélateur", f"{segment_max.split(' ')[0]} · {groupe_max}", f"{fr(R['part_max'], 0)} % de ses membres en stress élevé"),
+                ("Part en stress élevé dans ce segment", f"{fr(R['part_max'], 0)} %", None),
+                ("Segments à 80 % de stress élevé ou plus", f"{nb} sur {total}", f"{fr(part, 0)} % des utilisateurs"))
     st.markdown("""
-**Oui.** Même construits sans donnée de santé, certains segments laissent deviner un état de stress avec une forte probabilité. Une donnée qui révèle indirectement un état de santé doit être traitée comme une donnée de santé. D'où trois conditions :
+**Oui.** Même construits sans donnée de santé, certains segments laissent deviner un état de stress. Une donnée qui révèle indirectement un état de santé doit être traitée comme une donnée de santé, d'où trois conditions :
 - **nommer les segments par l'usage** (« S6 Très intensif, 55–65 ans »), jamais par le stress attendu ;
 - **ne stocker aucun score de stress** par utilisateur ;
 - **réserver les segments aux outils de protection** (rappels de temps, mode sommeil), sans publicité.
@@ -1132,82 +1198,70 @@ def page_protection():
     st.header("Les mesures que nous appliquons et recommandons")
     st.markdown("""
 - **Seuil de 100 utilisateurs :** aucune ligne individuelle ni aucun groupe de moins de 100 personnes n'est affiché.
-- **Données brutes jamais publiées :** le dossier `data/` est exclu du dépôt du projet par le fichier `.gitignore` ; seule la copie qui sert à l'application en ligne se trouve dans un dépôt privé.
-- **Une section « Limites et protection des données »** dans le notebook, l'application et le README.
+- **Données brutes jamais publiées :** le dossier `data/` est exclu du dépôt du projet par `.gitignore` ; seule la copie qui sert à l'application en ligne se trouve dans un dépôt privé.
 - **Interdiction écrite** d'utiliser les segments pour la publicité ou de les transmettre aux annonceurs.
 - **Informer les utilisateurs** du classement en segments, dans la politique de confidentialité.
 - **Inscrire le traitement au registre des traitements**, avec sa finalité, les données utilisées et la durée de conservation.
 """)
-    st.markdown("**Vérification de la règle des 100 utilisateurs**")
-    tableau(R["tailles"], 0)
+    chiffres(R["tailles"], 0, titre="Voir la vérification du seuil de 100 utilisateurs")
 
 
 def page_limites():
-    st.title("8 · Limites")
-    st.markdown("Ce que nos données **ne permettent pas d'affirmer**, et les points à garder en tête avant d'appliquer ces résultats à de vrais utilisateurs.")
+    entete("8 · Limites", "Ce que nos données ne permettent pas d'affirmer.")
     st.header("Pas de cause à effet")
-    st.markdown("Tous nos liens sont des **corrélations**. On ne peut pas dire qu'Instagram *cause* le stress : les personnes stressées pourraient aussi passer plus de temps sur l'application. Seules des expériences, où l'on fait varier le temps passé, peuvent tester une cause.")
+    st.markdown("Tous nos liens sont des **corrélations** : les personnes stressées pourraient aussi passer plus de temps sur l'application. Seules des expériences, où l'on fait varier le temps passé, peuvent tester une cause.")
     st.header("Un panel de volontaires")
-    st.markdown("Le stress et le bonheur ne sont mesurés que chez les **volontaires** de l'étude bien-être. Ils ne ressemblent pas forcément à l'ensemble des utilisateurs.")
+    st.markdown("Le stress et le bonheur ne sont mesurés que chez les **volontaires** de l'étude bien-être, qui ne ressemblent pas forcément à l'ensemble des utilisateurs.")
     st.header("Une réplique synthétique")
-    st.markdown(f"""
+    st.markdown("""
 - **Le lien entre temps passé et stress est très fort** : 71 % des écarts expliqués, contre 0,4 % au maximum dans les études réelles ([Orben & Przybylski, 2019](https://www.oii.ox.ac.uk/technology-use-explains-at-most-0-4-of-adolescent-wellbeing/)).
-- **Des effets connus sont absents** : le sommeil et le nombre de pas n'ont aucun lien ici, alors que nos sources les associent au bien-être (partie 1).
-- **Les deux versions du fichier (« usage » et « users ») sont presque identiques**, et le nettoyage de l'une n'est pas documenté (partie 0).
-- **{fr(R['part_signalees'], 0)} % des lignes ont au moins une incohérence métier** : elles sont signalées, et les résultats ne changent pas sans elles (partie 0).
-- **Un lien caché, très probablement artificiel, entre stress et bonheur** :
+- **Des effets connus sont absents** : le sommeil et le sport n'ont aucun lien ici, alors que nos sources les associent au bien-être.
+- **Les deux versions du fichier sont presque identiques**, et le nettoyage de l'une n'est pas documenté ; **27 % des lignes** ont au moins une incohérence métier.
+- **Un lien caché, très probablement artificiel, entre stress et bonheur :**
 """)
-    c1, c2 = st.columns(2)
-    c1.metric("Corrélation stress ↔ bonheur, sur tous les utilisateurs", fr(R["corr_globale"], 2))
-    c2.metric("Corrélation stress ↔ bonheur, à temps passé égal", fr(R["corr_temps_egal"], 2))
+    indicateurs(("Corrélation stress ↔ bonheur, sur tous les utilisateurs", fr(R["corr_globale"], 2), None),
+                ("Corrélation stress ↔ bonheur, à temps passé égal", fr(R["corr_temps_egal"], 2), None))
     cache = R["lien_cache"].reset_index()
     cache["etiquette"] = cache["stress_moyen"].map(fr)
     cache["n_txt"] = cache["n"].map(lambda v: fr(v, 0))
     montrer(barres_simples(cache, "niveau_bonheur", "stress_moyen", "etiquette",
                            titre("À temps égal, les plus heureux sont aussi les plus stressés",
-                                 "Stress moyen selon le bonheur, chez les utilisateurs du segment S3 (88 à 188 min par jour)"),
+                                 "Stress moyen selon le bonheur, dans le segment S3 (88 à 188 min par jour)"),
                            "Bonheur déclaré (1–10)", "Stress moyen (0–40)", ["1–2", "3–4", "5–6", "7–8", "9–10"], [0, 25],
                            [alt.Tooltip("niveau_bonheur:N", title="Bonheur"), alt.Tooltip("etiquette:N", title="Stress moyen"),
                             alt.Tooltip("n_txt:N", title="Utilisateurs")], couleur=MUTED))
-    st.markdown("""
-- Sur l'ensemble des utilisateurs, stress et bonheur **ne sont pas liés**. Mais **à temps passé égal**, ils sont **fortement liés, dans le même sens**.
-- **C'est très probablement un effet de la génération des données** : dans la réalité, on s'attend plutôt à ce que les personnes stressées soient moins heureuses. Ce lien ne sert pas à la segmentation.
-""")
-    st.header("D'autres points de prudence")
+    st.markdown("Dans la réalité, on s'attend plutôt à ce que les personnes stressées soient moins heureuses : **c'est très probablement un effet de la génération des données**. Ce lien ne sert pas à la segmentation.")
+    st.header("Autres points de prudence")
     st.markdown("""
 - **Le seuil de stress élevé (27)** est une convention de lecture de l'échelle PSS-10, pas un seuil de diagnostic.
-- **Les colonnes « story privée » et « partages » n'existent pas** : l'activité privée n'est mesurée que par les messages (partie 4.3).
+- **Les colonnes « story privée » et « partages » n'existent pas** : l'activité privée n'est mesurée que par les messages.
 """)
-    retenir("nos résultats décrivent **des tendances fortes dans une réplique synthétique**. Ils indiquent où regarder, mais doivent être **confirmés sur de vraies données**, et ne permettent jamais de conclure à une cause.")
+    retenir("Nos résultats décrivent des tendances fortes dans une réplique synthétique. Ils indiquent où regarder, mais doivent être confirmés sur de vraies données, et ne permettent jamais de conclure à une cause.")
 
 
 def page_conclusion():
-    st.title("9 · Conclusion et recommandations")
+    entete("9 · Conclusion et recommandations", "Ce qu'il faut retenir, et ce que les équipes produit peuvent en faire.")
     st.header("Le lien entre l'usage d'Instagram et le bien-être")
     st.markdown("""
-- **Le temps passé chaque jour est le facteur central.** Il explique **71 %** des écarts de stress (environ +5,4 points par heure) et **16 %** des écarts de bonheur, qui chute surtout aux deux extrêmes. Les plus heureux passent deux fois moins de temps sur l'application que les moins heureux.
+- **Le temps passé chaque jour est le facteur central.** Il explique **71 %** des écarts de stress (environ +5,4 points par heure) et **16 %** des écarts de bonheur, qui chute surtout aux deux extrêmes.
 - **L'âge change ce lien.** Les plus jeunes passent plus de temps sur Instagram, mais à temps égal, les plus âgés sont plus stressés (+1,2 point par tranche de 10 ans).
-- **Les habitudes d'utilisation n'ajoutent rien au temps passé** : intensité des actions, création ou consommation de contenu, activité privée ou publique, connexions « réflexe » ou « immersion ». Toutes leurs différences disparaissent à temps égal.
+- **Les moins heureux et les plus stressés ont un usage plus intensif** : plus de temps passé, plus d'actions, plus de publications, une activité plus publique et des connexions plus fréquentes.
 - **Le sommeil, l'activité physique et le pays ne sont pas liés** à l'usage dans notre panel.
 - **Stress et bonheur sont deux indicateurs distincts**, à suivre séparément.
 """)
     st.header("Une segmentation utilisable par les équipes produit")
-    st.markdown("""
-- **Six segments de temps passé (S1 à S6) croisés avec quatre groupes d'âge** : deux informations connues pour tous les utilisateurs, sans donnée de santé.
-- La carte des segments donne directement **les groupes à accompagner en priorité**, et un nouvel utilisateur peut y être placé (simulateur de la partie 6).
-- **Les limites** (partie 8) : des corrélations et non des causes, un panel de volontaires, et une réplique synthétique.
-""")
+    st.markdown("**Six segments de temps passé (S1 à S6) croisés avec quatre groupes d'âge** : deux informations connues pour tous les utilisateurs, sans donnée de santé. La carte des segments désigne directement les groupes à accompagner en priorité, et le simulateur (partie 6) place n'importe quel nouvel utilisateur.")
     st.header("Recommandations")
     st.markdown("""
-1. **Un rappel de temps quotidien cumulé, avec un seuil selon l'âge.** Dès le segment S3 (88 à 188 min par jour), 15 % des 55–65 ans sont en stress élevé, contre 2 % des 13–17 ans, qui ne dépassent 15 % qu'en S4. Nous recommandons un rappel **à l'entrée de S3 (environ 1 h 30 par jour) pour les 55–65 ans** et **à l'entrée de S4 (environ 3 h) pour les autres**, **activé par défaut pour les mineurs**. Le rappel doit compter le temps **de toute la journée**, pas celui d'une seule session (partie 4.4).
-2. **Faire du temps quotidien passé l'indicateur de suivi numéro un**, par segment, dans les tableaux de bord produit, plutôt que les compteurs d'activité ou le score d'engagement, qui n'apportent rien de plus. Dans les études bien-être, **suivre le stress et le bonheur séparément**.
-3. **Réserver les segments aux outils de protection** (rappels, mode sommeil) : jamais de publicité, des segments nommés par l'usage et non par le stress, et une analyse d'impact sur la protection des données avant tout déploiement.
+1. **Un rappel de temps quotidien cumulé, avec un seuil selon l'âge.** Dès le segment S3 (88 à 188 min par jour), 15 % des 55–65 ans sont en stress élevé, contre 2 % des 13–17 ans, qui ne dépassent 15 % qu'en S4. Nous recommandons un rappel **à l'entrée de S3 (environ 1 h 30 par jour) pour les 55–65 ans** et **à l'entrée de S4 (environ 3 h) pour les autres**, **activé par défaut pour les mineurs**, qui compte le temps **de toute la journée**.
+2. **Faire du temps quotidien passé l'indicateur de suivi numéro un**, par segment, plutôt que les compteurs d'activité ou le score d'engagement ; dans les études bien-être, **suivre le stress et le bonheur séparément**.
+3. **Réserver les segments aux outils de protection** (rappels, mode sommeil) : jamais de publicité, des segments nommés par l'usage, et une analyse d'impact sur la protection des données avant tout déploiement.
 """)
-    st.success("**En une phrase :** plus on passe de temps sur Instagram, plus on est stressé, et ce lien est plus fort chez les plus âgés ; une segmentation simple par temps passé et âge permet aux équipes produit de cibler leurs outils de protection, sans utiliser de données de santé.")
+    encadre("En une phrase", "Plus on passe de temps sur Instagram, plus on est stressé, et ce lien est plus fort chez les plus âgés ; une segmentation simple par temps passé et âge permet aux équipes produit de cibler leurs outils de protection, sans utiliser de données de santé.")
 
 
 def page_sources():
-    st.title("Sources")
+    entete("Sources", "Les références citées dans l'analyse.")
     st.markdown("""
 **Définitions**
 - OMS : [constitution de l'Organisation mondiale de la santé](https://www.who.int/fr/about/governance/constitution)
@@ -1220,7 +1274,6 @@ def page_sources():
 - Liu et al., 2022, méta-analyse dose–effet : [texte intégral (PMC)](https://pmc.ncbi.nlm.nih.gov/articles/PMC9103874/)
 - Orben & Przybylski, 2019, *Nature Human Behaviour* : [Oxford Internet Institute](https://www.oii.ox.ac.uk/technology-use-explains-at-most-0-4-of-adolescent-wellbeing/)
 - Assemblée nationale, question écrite citant le rapport « Enfants et écrans » (2024) : [PDF](https://www.assemblee-nationale.fr/dyn/16/questions/QANR5L16QE18298.pdf)
-- Valkenburg, van Driel & Beyens, 2022, *New Media & Society* : [article](https://journals.sagepub.com/doi/10.1177/14614448211065425)
 - Modèle de Keyes : [Frontiers in Psychology, 2022](https://www.frontiersin.org/articles/10.3389/fpsyg.2022.885278/full)
 
 **Mode de vie**
