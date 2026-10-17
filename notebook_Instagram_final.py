@@ -30,6 +30,8 @@ h1, h2, h3 {letter-spacing: -0.015em;}
     text-overflow: clip !important; height: auto !important;}
 [data-testid="stMetricLabel"] p {font-size: 0.86rem; color: #52514e;}
 [data-testid="stMetricValue"] {font-size: 1.75rem; font-weight: 650; letter-spacing: -0.01em;}
+[data-testid="stMetricValue"], [data-testid="stMetricValue"] * {white-space: normal !important; overflow: visible !important;
+    text-overflow: clip !important; height: auto !important;}
 /* Encadrés */
 .encadre {border-left: 4px solid; border-radius: 0 0.6rem 0.6rem 0; padding: 0.85rem 1.15rem; margin: 1rem 0 0.6rem 0;}
 .encadre .titre-encadre {font-size: 0.74rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 0.3rem 0;}
@@ -45,6 +47,12 @@ h1, h2, h3 {letter-spacing: -0.015em;}
 .stTabs [data-baseweb="tab-list"] {gap: 0.5rem;}
 .stTabs [data-baseweb="tab"] p {font-size: 0.98rem; font-weight: 500;}
 .stTabs [data-baseweb="tab"][aria-selected="true"] p {font-weight: 600;}
+/* Onglets fermés : invisibles, mais à leur vraie largeur, pour que leurs graphiques soient dessinés à la bonne taille */
+.stTabs [data-baseweb="tab-panel"][hidden] {display: block !important; height: 0 !important; overflow: hidden !important;
+    visibility: hidden !important; padding: 0 !important;}
+/* Titres des graphiques */
+.titre-graphique {font-size: 1.02rem; font-weight: 650; line-height: 1.35; color: #0b0b0b; margin: 0.4rem 0 0 0;}
+.sous-titre-graphique {font-size: 0.9rem; line-height: 1.4; color: #52514e; margin: 0.15rem 0 0 0;}
 /* Tableaux */
 [data-testid="stTable"] table {font-size: 0.9rem;}
 /* Menu et navigation entre les parties */
@@ -145,6 +153,15 @@ _LARGEUR = ({"width": "stretch"} if "width" in inspect.signature(st.altair_chart
 
 
 def montrer(graphique):
+    """Affiche un graphique ; son titre est écrit au-dessus, en texte, pour passer à la ligne au lieu d'être coupé."""
+    titre_graphique = getattr(graphique, "title", alt.Undefined)
+    if isinstance(titre_graphique, alt.TitleParams):
+        sous_titre = titre_graphique.subtitle
+        st.markdown(f'<p class="titre-graphique">{html.escape(str(titre_graphique.text), quote=False)}</p>'
+                    + (f'<p class="sous-titre-graphique">{html.escape(str(sous_titre), quote=False)}</p>'
+                       if isinstance(sous_titre, str) else ""), unsafe_allow_html=True)
+        graphique = graphique.copy()
+        graphique.title = alt.Undefined
     st.altair_chart(habiller(graphique), theme=None, **_LARGEUR)
 
 
@@ -238,16 +255,23 @@ def barres_simples(data, x, y, etiquette, titre_graphique, x_titre, y_titre, ord
 
 
 def barres_groupees(data, x, serie, y, etiquette, ordre_x, series, couleurs, titre_graphique, x_titre, y_titre,
-                    domaine_y, tooltip, hauteur=330, axe_y=None, angle=0):
-    """Barres groupées : une couleur par série, la valeur au-dessus de chaque barre."""
+                    domaine_y, tooltip, hauteur=330, axe_y=None, angle=0, deux_lignes=False):
+    """Barres groupées : une couleur par série, la valeur au-dessus de chaque barre.
+
+    deux_lignes : les libellés de l'axe horizontal passent à la ligne après leur premier mot (« Q1 » / « le plus public »)."""
+    axe_x = alt.Axis(labelAngle=angle, labelLimit=170)
+    if deux_lignes:
+        axe_x = alt.Axis(labelAngle=0, labelLimit=170, labelLineHeight=15, labelExpr=(
+            "indexof(datum.label, ' ') > 0 ? [substring(datum.label, 0, indexof(datum.label, ' ')), "
+            "substring(datum.label, indexof(datum.label, ' ') + 1)] : datum.label"))
     base = alt.Chart(data).encode(
-        x=alt.X(f"{x}:N", sort=ordre_x, title=x_titre, axis=alt.Axis(labelAngle=angle, labelLimit=170)),
+        x=alt.X(f"{x}:N", sort=ordre_x, title=x_titre, axis=axe_x),
         xOffset=alt.XOffset(f"{serie}:N", sort=series),
         y=alt.Y(f"{y}:Q", title=y_titre, scale=alt.Scale(domain=domaine_y), axis=axe_y),
     )
     barres = base.mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
         color=alt.Color(f"{serie}:N", scale=alt.Scale(domain=series, range=couleurs), title=None,
-                        legend=alt.Legend(columns=len(series))),
+                        legend=alt.Legend(columns=len(series) if sum(len(s) for s in series) <= 40 else 1)),
         tooltip=tooltip)
     textes = base.mark_text(dy=-8, fontSize=10.5, color=INK2).encode(text=f"{etiquette}:N")
     return (barres + textes).properties(title=titre_graphique, height=hauteur)
@@ -533,7 +557,7 @@ def calculer():
         ("1. Distingue bien le bien-être", "part en stress élevé, du segment le plus bas au plus haut",
          f"de {fr(grille.min().min(), 0)} % à {fr(grille.max().max(), 0)} %"),
         ("2. Apporte plus que le temps seul", "plus grand écart entre groupes d'âge dans un même segment de temps",
-         f"{fr(ecarts_age.max(), 0)} points ({ecarts_age.idxmax()})"),
+         f"{fr(ecarts_age.max(), 1)} points ({ecarts_age.idxmax()})"),
         ("3. S'applique à tout utilisateur", "valeurs manquantes dans l'âge et le temps passé",
          str(int(df[["age", TEMPS]].isna().sum().sum()))),
         ("4. Est stable", "plus grand écart entre deux moitiés du fichier",
@@ -647,7 +671,7 @@ def page_donnees():
         drapeaux["etiquette"] = drapeaux["part des lignes (%)"].map(lambda v: f"{fr(v)} %")
         base = alt.Chart(drapeaux).encode(
             y=alt.Y("règle:N", sort=None, title=None, axis=alt.Axis(labelLimit=460)),
-            x=alt.X("part des lignes (%):Q", title="Part des lignes", scale=alt.Scale(domain=[0, 20]), axis=AXE_POURCENT))
+            x=alt.X("part des lignes (%):Q", title="Part des lignes", scale=alt.Scale(domain=[0, 25]), axis=AXE_POURCENT))
         montrer((base.mark_bar(size=20, cornerRadiusTopRight=4, cornerRadiusBottomRight=4, color=BLEU).encode(
             tooltip=[alt.Tooltip("indicateur:N", title="Indicateur"), alt.Tooltip("etiquette:N", title="Part des lignes")])
                  + base.mark_text(align="left", dx=6, fontSize=12, color=INK).encode(text="etiquette:N")).properties(
@@ -695,7 +719,7 @@ def page_donnees():
         apport["etiquette"] = apport["part"].map(lambda v: f"{fr(v)} %")
         base = alt.Chart(apport).encode(
             y=alt.Y("decoupage:N", sort=None, title=None, axis=alt.Axis(labelLimit=420)),
-            x=alt.X("part:Q", title="Part du stress expliquée", scale=alt.Scale(domain=[0, 80]), axis=AXE_POURCENT))
+            x=alt.X("part:Q", title="Part du stress expliquée", scale=alt.Scale(domain=[0, 100]), axis=AXE_POURCENT))
         montrer((base.mark_bar(size=22, cornerRadiusTopRight=4, cornerRadiusBottomRight=4, color=BLEU).encode(
             tooltip=[alt.Tooltip("decoupage:N", title="Découpage"), alt.Tooltip("etiquette:N", title="Part expliquée")])
                  + base.mark_text(align="left", dx=6, fontSize=12, color=INK).encode(text="etiquette:N")).properties(
@@ -844,7 +868,7 @@ def page_temps():
             x=alt.X("court:N", sort=COURTS, title="Segment de temps passé", axis=alt.Axis(labelAngle=0)),
             y=alt.Y("part:Q", title="Part des utilisateurs", scale=alt.Scale(domain=[0, 55]), axis=AXE_POURCENT),
             color=alt.Color("groupe:N", scale=alt.Scale(domain=["Très heureux (bonheur 9–10)", "Très malheureux (bonheur 1–2)"],
-                                                        range=[BLEU, ROUGE]), title=None))
+                                                        range=[BLEU, ROUGE]), title=None, legend=alt.Legend(columns=1)))
         lignes = base.mark_line(strokeWidth=2) + base.mark_point(filled=True, size=80, stroke=SURFACE, strokeWidth=1.5, opacity=1).encode(
             tooltip=[alt.Tooltip("segment:N", title="Segment"), alt.Tooltip("groupe:N", title="Groupe"), alt.Tooltip("etiquette:N", title="Part")])
         extremites = base.mark_text(dy=-12, fontSize=12, color=INK2).encode(text="etiquette:N", color=alt.value(INK2)).transform_filter(
@@ -873,7 +897,7 @@ def page_temps():
         copies["etiquette"] = copies["correlation"].map(lambda v: fr(v, 2))
         base = alt.Chart(copies).encode(
             y=alt.Y("variable:N", sort="-x", title=None),
-            x=alt.X("correlation:Q", title="Corrélation avec le temps passé par jour (0 à 1)", scale=alt.Scale(domain=[0, 1.05]),
+            x=alt.X("correlation:Q", title="Corrélation avec le temps passé par jour (0 à 1)", scale=alt.Scale(domain=[0, 1.2]),
                     axis=alt.Axis(labelExpr="replace(format(datum.value, '.1f'), '.', ',')")))
         montrer((base.mark_bar(size=18, cornerRadiusTopRight=4, cornerRadiusBottomRight=4, color=BLEU).encode(
             tooltip=[alt.Tooltip("variable:N", title="Variable"), alt.Tooltip("etiquette:N", title="Corrélation")])
@@ -983,7 +1007,7 @@ def page_habitudes():
 
     with onglets[1]:
         st.subheader("Les créateurs de contenu sont-ils moins heureux que les consommateurs ?", anchor=False)
-        st.caption("Consommateur : 0 à 3 publications par semaine · intermédiaire : 4 à 7 · créateur : 8 et plus.")
+        st.caption("Consommateur : 0 à 3 publications par semaine · intermédiaire : 4 à 7 · créateur : 8 et plus · segments : S1 moins de 20 min par jour, S6 plus de 290 min.")
         indicateurs(("Bonheur : consommateurs / créateurs", f"{fr(createurs['bonheur'].iloc[0])} / {fr(createurs['bonheur'].iloc[2])}", None),
                     ("Stress : consommateurs / créateurs", f"{fr(createurs['stress'].iloc[0])} / {fr(createurs['stress'].iloc[2])}", None),
                     ("Temps passé : consommateurs / créateurs", f"{fr(createurs['minutes'].iloc[0], 0)} / {fr(createurs['minutes'].iloc[2], 0)} min", None))
@@ -999,8 +1023,7 @@ def page_habitudes():
         gauche, droite = st.columns(2)
         with gauche:
             base = alt.Chart(repartition).encode(
-                x=alt.X("court:N", sort=COURTS, title="Segment de temps passé (S1 : moins de 20 min · S6 : plus de 290 min)",
-                        axis=alt.Axis(labelAngle=0)),
+                x=alt.X("court:N", sort=COURTS, title="Segment de temps passé", axis=alt.Axis(labelAngle=0)),
                 xOffset=alt.XOffset("profil:N", sort=profils_cc),
                 y=alt.Y("part:Q", title="Part du profil", scale=alt.Scale(domain=[0, 55]), axis=AXE_POURCENT))
             montrer((base.mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
@@ -1012,8 +1035,7 @@ def page_habitudes():
                             "Répartition de chaque profil entre les six segments de temps passé"), height=340))
         with droite:
             base = alt.Chart(par_segment).encode(
-                x=alt.X("court:N", sort=COURTS, title="Segment de temps passé (S1 : moins de 20 min · S6 : plus de 290 min)",
-                        axis=alt.Axis(labelAngle=0)),
+                x=alt.X("court:N", sort=COURTS, title="Segment de temps passé", axis=alt.Axis(labelAngle=0)),
                 y=alt.Y("bonheur:Q", title="Bonheur moyen (1–10)", scale=alt.Scale(domain=[1, 10])),
                 color=alt.Color("profil:N", scale=couleurs_cc, title=None))
             montrer((base.mark_line(strokeWidth=2.5) + base.mark_point(filled=True, size=70, stroke=SURFACE, strokeWidth=1.2, opacity=1).encode(
@@ -1052,11 +1074,11 @@ def page_habitudes():
         with gauche:
             montrer(barres_groupees(longue("stress"), "groupe", "serie", "valeur", "etiquette", QUINTILES, series, [BLEU, BLEU_CLAIR],
                                     titre("Stress selon la part d'activité privée", "Échelle de 0 à 40"), None, "Stress moyen (0–40)", [0, 30],
-                                    infobulle, angle=-20))
+                                    infobulle, deux_lignes=True))
         with droite:
             montrer(barres_groupees(longue("bonheur"), "groupe", "serie", "valeur", "etiquette", QUINTILES, series, [ROUGE, ROUGE_CLAIR],
                                     titre("Bonheur selon la part d'activité privée", "Échelle de 1 à 10"), None, "Bonheur moyen (1–10)", [0, 8],
-                                    infobulle, angle=-20))
+                                    infobulle, deux_lignes=True))
         st.markdown(f"""
 - Le stress baisse et le bonheur monte surtout dans les deux groupes **les plus privés** (Q4 et Q5) ; de Q1 à Q3, ils changent peu.
 - Les plus privés **likent et commentent deux fois moins**, pour un nombre de messages comparable. Chez les {fr(R['n_vers_90'], 0)} utilisateurs qui passent environ 90 min par jour (barres claires), les cinq groupes ont le même stress et le même bonheur.
