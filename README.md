@@ -24,7 +24,7 @@ Bootcamp Data · Epitech
 
 - **Le temps passé chaque jour est le facteur central** : il explique 71 % des écarts de stress (environ +5,4 points par heure, sur une échelle de 0 à 40) et 16 % des écarts de bonheur, qui chute surtout aux deux extrêmes.
 - **L'âge change ce lien** : les plus jeunes passent plus de temps sur Instagram, mais à temps égal, les plus âgés sont plus stressés (+1,2 point par tranche de 10 ans).
-- **Les moins heureux et les plus stressés ont un usage plus intensif** : plus de temps passé, plus d'actions, plus de publications, une activité plus publique et des connexions plus fréquentes.
+- **Les habitudes d'utilisation vont dans le même sens** : les moins heureux et les plus stressés ont un usage plus intensif (plus d'actions, plus de publications, une activité plus publique, des connexions plus fréquentes) et passent plus de temps sur l'application.
 - **Le sommeil, l'activité physique et le pays ne sont pas liés** à l'usage dans le panel.
 - **Segmentation retenue** : 6 segments de temps passé (S1 à S6) croisés avec 4 groupes d'âge, soit 24 segments construits sans aucune donnée de santé.
 
@@ -74,7 +74,7 @@ L'application s'ouvre dans le navigateur à l'adresse `http://localhost:8501`.
 
 ## Méthode en bref
 
-1. **Nettoyage** : aucune valeur manquante ni doublon ; 27 % des lignes ont au moins une incohérence métier, signalée (`flag_*`) et non supprimée, sans effet sur les résultats.
+1. **Nettoyage** : aucune valeur manquante ni doublon ; 26 % des lignes ont au moins une incohérence métier, signalée (`flag_*`) et non supprimée, sans effet sur les résultats.
 2. **Choix du fichier** : les deux versions de la réplique ont 52 colonnes sur 58 identiques, dont toutes celles utilisées dans l'analyse.
 3. **Analyse « à temps égal »** : chaque habitude est comparée entre utilisateurs qui passent le même temps sur Instagram, pour savoir si elle apporte quelque chose en plus du temps passé.
 4. **Segmentation par paliers** plutôt qu'un regroupement automatique, car les variables d'usage sont presque toutes des copies du temps passé.

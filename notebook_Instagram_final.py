@@ -7,6 +7,7 @@ Lancement depuis le dossier du projet :
 Règle de confidentialité : l'application ne manipule que des résultats agrégés.
 Aucune ligne individuelle n'est affichée, et aucun groupe de moins de 100 utilisateurs.
 """
+import html
 import inspect
 from pathlib import Path
 
@@ -15,15 +16,41 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-st.set_page_config(page_title="Rush 4 · Instagram et bien-être", layout="wide")
+st.set_page_config(page_title="Rush 4 · Instagram et bien-être", page_icon=":material/insights:", layout="wide")
 st.markdown("""<style>
 #MainMenu, footer, [data-testid="stDecoration"], [data-testid="stAppDeployButton"] {display: none !important;}
-.block-container {max-width: 1180px; padding-top: 2.4rem; padding-bottom: 3rem;}
-h1 {font-weight: 700 !important; letter-spacing: -0.015em;}
-.accroche {font-size: 1.08rem; color: #52514e; margin-top: -0.5rem; margin-bottom: 1.4rem;}
-[data-testid="stMetricValue"] {font-weight: 600;}
+.block-container {max-width: 1160px; padding-top: 2.6rem; padding-bottom: 2.5rem;}
+h1, h2, h3 {letter-spacing: -0.015em;}
+/* En-tête de page */
+.surtitre {font-size: 0.78rem; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; color: #2a78d6; margin: 0 0 -0.5rem 0;}
+.accroche {font-size: 1.12rem; line-height: 1.5; color: #52514e; margin: -0.3rem 0 1.5rem 0; max-width: 60rem;}
+/* Chiffres clés */
+[data-testid="stMetric"] {background: #ffffff;}
 [data-testid="stMetricLabel"], [data-testid="stMetricLabel"] * {white-space: normal !important; overflow: visible !important;
     text-overflow: clip !important; height: auto !important;}
+[data-testid="stMetricLabel"] p {font-size: 0.86rem; color: #52514e;}
+[data-testid="stMetricValue"] {font-size: 1.75rem; font-weight: 650; letter-spacing: -0.01em;}
+/* Encadrés */
+.encadre {border-left: 4px solid; border-radius: 0 0.6rem 0.6rem 0; padding: 0.85rem 1.15rem; margin: 1rem 0 0.6rem 0;}
+.encadre .titre-encadre {font-size: 0.74rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 0.3rem 0;}
+.encadre .texte-encadre {margin: 0; font-size: 1rem; line-height: 1.55; color: #0b0b0b;}
+.encadre-bleu {background: #edf4fd; border-color: #2a78d6;}
+.encadre-bleu .titre-encadre {color: #1c5cab;}
+.encadre-orange {background: #fdf1ea; border-color: #eb6834;}
+.encadre-orange .titre-encadre {color: #b4481a;}
+.encadre-fort {background: #0d366b; border-color: #0d366b; border-radius: 0.6rem; padding: 1.1rem 1.4rem;}
+.encadre-fort .titre-encadre {color: #9ec5f4;}
+.encadre-fort .texte-encadre {color: #ffffff; font-size: 1.1rem;}
+/* Onglets */
+.stTabs [data-baseweb="tab-list"] {gap: 0.5rem;}
+.stTabs [data-baseweb="tab"] p {font-size: 0.98rem; font-weight: 500;}
+.stTabs [data-baseweb="tab"][aria-selected="true"] p {font-weight: 600;}
+/* Tableaux */
+[data-testid="stTable"] table {font-size: 0.9rem;}
+/* Menu et navigation entre les parties */
+[data-testid="stSidebarNav"] span {letter-spacing: -0.02em;}
+.st-key-navigation_bas [data-testid="stPageLink"] a {border: 1px solid #e1e0d9; border-radius: 0.6rem; background: #ffffff; padding: 0.5rem 0.9rem;}
+.st-key-suivante [data-testid="stPageLink"] {display: flex; justify-content: flex-end;}
 </style>""", unsafe_allow_html=True)
 
 # ---------------------------------------------------------------------------
@@ -129,13 +156,13 @@ AXE_HEURES = alt.Axis(values=list(range(0, 9)), labelExpr="datum.value + ' h'", 
 AXE_POURCENT = alt.Axis(labelExpr="datum.value + ' %'")
 
 
-_CADRE = {"border": True} if "border" in inspect.signature(st.container).parameters else {}
 _BORDURE_INDICATEUR = {"border": True} if "border" in inspect.signature(st.metric).parameters else {}
 
 
-def encadre(etiquette, texte, couleur="blue"):
-    with st.container(**_CADRE):
-        st.markdown(f":{couleur}[**{etiquette}**]  \n{texte}")
+def encadre(etiquette, texte, style="bleu"):
+    """Encadré de synthèse : une étiquette en capitales, puis le texte."""
+    st.markdown(f'<div class="encadre encadre-{style}"><p class="titre-encadre">{html.escape(etiquette)}</p>'
+                f'<p class="texte-encadre">{html.escape(texte, quote=False)}</p></div>', unsafe_allow_html=True)
 
 
 def retenir(texte):
@@ -143,12 +170,46 @@ def retenir(texte):
 
 
 def conclusion_produit(texte):
-    encadre("Pour les équipes produit", texte, couleur="orange")
+    encadre("Pour les équipes produit", texte, style="orange")
 
 
-def entete(texte, accroche):
-    st.title(texte)
-    st.markdown(f'<p class="accroche">{accroche}</p>', unsafe_allow_html=True)
+# Les parties : (adresse, rubrique du menu, libellé du menu, surtitre, titre, accroche, icône)
+PARTIES = [
+    ("introduction", "Le projet", "Introduction", "Rush 4 · Bootcamp Data · Epitech",
+     "Segmentation des utilisateurs d'Instagram : usage et bien-être",
+     "Livrable final de l'équipe : analyse, segmentation et recommandations.", ":material/home:"),
+    ("donnees", "Le projet", "0 · Nettoyage et données", "Partie 0", "Nettoyage et données",
+     "Vérifier la qualité des données, choisir le bon fichier et construire les variables utiles.", ":material/cleaning_services:"),
+    ("hypotheses", "L'analyse", "1 · Hypothèses", "Partie 1", "Les hypothèses non concluantes",
+     "Le sommeil, l'activité physique et le pays : trois pistes qui ne se vérifient pas dans notre panel, "
+     "alors que les deux premières sont appuyées par des sources de santé publique.", ":material/block:"),
+    ("temps-passe", "L'analyse", "2 · Temps passé", "Partie 2", "Le temps passé sur Instagram",
+     "Le cœur du lien entre l'usage et le bien-être.", ":material/schedule:"),
+    ("age", "L'analyse", "3 · Âge", "Partie 3", "Le rôle de l'âge",
+     "L'âge est la seule variable, en dehors du temps passé, qui change le lien avec le stress.", ":material/groups:"),
+    ("habitudes", "L'analyse", "4 · Habitudes d'utilisation", "Partie 4", "Les habitudes d'utilisation",
+     "Au-delà du temps passé, la façon d'utiliser Instagram est-elle liée au bien-être ?", ":material/touch_app:"),
+    ("stress-et-bonheur", "L'analyse", "5 · Stress et bonheur", "Partie 5", "Stress et bonheur",
+     "Le stress lié à l'usage s'accompagne-t-il d'une baisse de bonheur ?", ":material/mood:"),
+    ("segmentation", "La segmentation", "6 · Segmentation", "Partie 6", "La segmentation",
+     "Deux informations suffisent : le segment de temps passé (S1 à S6) et le groupe d'âge, connus pour tous les utilisateurs.",
+     ":material/grid_view:"),
+    ("protection-des-donnees", "Le cadre", "7 · Protection des données", "Partie 7", "Protection des données",
+     "Notre position pour les utilisateurs de l'Union européenne et du Royaume-Uni, y compris les moins de 18 ans.", ":material/shield:"),
+    ("limites", "Le cadre", "8 · Limites", "Partie 8", "Limites", "Ce que nos données ne permettent pas d'affirmer.", ":material/warning:"),
+    ("conclusion", "La synthèse", "9 · Conclusion", "Partie 9", "Conclusion et recommandations",
+     "Ce qu'il faut retenir, et ce que les équipes produit peuvent en faire.", ":material/flag:"),
+    ("sources", "La synthèse", "Sources", "Annexe", "Sources", "Les références citées dans l'analyse.", ":material/menu_book:"),
+]
+PARTIE = {adresse: (surtitre, titre_partie, accroche) for adresse, _, _, surtitre, titre_partie, accroche, _ in PARTIES}
+
+
+def entete(adresse):
+    """En-tête commun à toutes les pages : surtitre, titre et accroche de la partie."""
+    surtitre, texte, accroche = PARTIE[adresse]
+    st.markdown(f'<p class="surtitre">{html.escape(surtitre)}</p>', unsafe_allow_html=True)
+    st.title(texte, anchor=False)
+    st.markdown(f'<p class="accroche">{html.escape(accroche, quote=False)}</p>', unsafe_allow_html=True)
 
 
 def indicateurs(*elements):
@@ -521,16 +582,11 @@ def segment_vers_court(index):
 # Pages
 # ---------------------------------------------------------------------------
 def page_introduction():
-    entete("Segmentation des utilisateurs d'Instagram : usage et bien-être", "Rush 4 · Bootcamp Data · Epitech")
-    indicateurs(("Utilisateurs analysés", fr(R["n"], 0), None),
-                ("Stress expliqué par le temps passé", f"{fr(R['r2_stress'] * 100, 0)} %",
-                 "Part des écarts de stress entre utilisateurs expliquée par le temps passé sur Instagram"),
-                ("Stress en plus par heure", f"+{fr(R['pente'])} pt",
-                 "Points de stress, sur une échelle de 0 à 40, pour chaque heure passée sur Instagram"),
-                ("Segments", str(len(R["segments"])), "6 segments de temps passé × 4 groupes d'âge"))
-
-    st.header("Objectif")
-    st.markdown("""
+    entete("introduction")
+    objectif, contexte = st.columns(2, gap="large")
+    with objectif:
+        st.subheader("Objectif", anchor=False)
+        st.markdown("""
 **Étudier les relations entre l'utilisation d'Instagram et le bien-être des utilisateurs**, à partir d'un jeu de données de 200 000 personnes.
 
 Le département Innovation d'Instagram nous demande de **livrer une segmentation des utilisateurs** qui :
@@ -539,40 +595,54 @@ Le département Innovation d'Instagram nous demande de **livrer une segmentation
 - est **utilisable par les équipes produit** ;
 - est **défendue devant un jury**.
 """)
-    st.header("Contexte")
-    st.markdown("""
-Les réseaux sociaux doivent prouver qu'ils ne nuisent pas à leurs utilisateurs. Instagram veut **sa propre réponse, fondée sur ses propres données**.
-- Les données de **bien-être** (stress, bonheur, sommeil…) viennent d'un **panel de volontaires** qui ont accepté une étude bien-être.
+    with contexte:
+        st.subheader("Le contexte", anchor=False)
+        st.markdown("""
+Les réseaux sociaux doivent prouver qu'ils ne nuisent pas à leurs utilisateurs : les régulateurs posent des questions, la presse publie des études et les annonceurs ne veulent pas être associés à une plateforme qui rend les gens malheureux. Instagram veut **sa propre réponse, fondée sur ses propres données**.
+- Les données de **bien-être et de santé** (stress, bonheur, sommeil…) viennent d'un **panel de volontaires** qui ont accepté une étude bien-être.
 - Les données d'**usage** (temps passé, sessions, likes…) et de **profil** (âge, pays…) existent pour **tous** les utilisateurs.
-- Nous travaillons sur une **réplique synthétique** du panel ; nos recommandations s'appliqueront à de vrais utilisateurs.
+- Nous travaillons sur une **réplique synthétique** du panel, fournie par l'équipe vie privée. Nos recommandations, elles, s'appliqueront à de vrais utilisateurs.
 """)
-    st.header("Définitions")
+    st.subheader("Définitions", anchor=False)
     st.markdown("""
-- **Bien-être :** l'OMS définit la santé comme « un état de complet bien-être physique, mental et social » ([constitution de l'OMS](https://www.who.int/fr/about/governance/constitution)) ; la santé mentale est un état de bien-être qui permet notamment de surmonter les tensions normales de la vie ([sante.fr](https://www.sante.fr/toutes-et-tous-une-sante-mentale)). Nous le mesurons avec **deux indicateurs** : le stress et le bonheur.
-- **Bonheur :** une **auto-évaluation** de sa propre vie sur une échelle, comme l'échelle de Cantril utilisée par le [World Happiness Report](https://www.worldhappiness.report/faq/). Ici, le **bonheur déclaré** va de 1 à 10.
-- **Stress :** le **stress perçu** va de 0 à 40, la plage de l'échelle **PSS-10** (sans que la documentation le confirme). Il est considéré comme **élevé à partir de 27**, une convention de lecture et non un seuil de diagnostic ([NovoPsych](https://novopsych.com.au/wp-content/uploads/2022/02/pss-10-report-PDF.pdf)).
-- **Plus heureux / moins heureux :** bonheur de **9 ou 10** et de **1 ou 2** (20 % des utilisateurs chacun).
+- **Bien-être :** l'Organisation mondiale de la santé définit la santé comme « un état de complet bien-être physique, mental et social », qui ne se réduit pas à l'absence de maladie ([constitution de l'OMS](https://www.who.int/fr/about/governance/constitution)). La santé mentale y est décrite comme un état de bien-être qui permet notamment de surmonter les tensions normales de la vie ([Santé publique France, sante.fr](https://www.sante.fr/toutes-et-tous-une-sante-mentale)). Nous mesurons le bien-être avec **deux indicateurs** : le stress et le bonheur.
+- **Bonheur :** une **auto-évaluation** de sa propre vie sur une échelle, comme l'échelle de Cantril (de 0 à 10) utilisée par le [World Happiness Report](https://www.worldhappiness.report/faq/). Dans nos données, le **bonheur déclaré** (`self_reported_happiness`) va de 1 à 10.
+- **Stress :** le **stress perçu** (`perceived_stress_score`) va de 0 à 40. C'est la plage de l'échelle **PSS-10**, sans que la documentation le confirme. On considère le stress comme **élevé à partir de 27**, une convention de lecture courante et non un seuil de diagnostic ([guide de cotation, NovoPsych](https://novopsych.com.au/wp-content/uploads/2022/02/pss-10-report-PDF.pdf)).
+- **Plus heureux / moins heureux** (aussi appelés très heureux / très malheureux) **:** les utilisateurs au bonheur de **9 ou 10** (20 % des utilisateurs) et de **1 ou 2** (20 % des utilisateurs).
 """)
-    st.header("Règles d'analyse")
+    st.subheader("Les règles suivies", anchor=False)
     st.markdown("""
-- **Aucune donnée individuelle n'est affichée** : seulement des moyennes de groupes d'au moins **100 utilisateurs**.
+- **Aucune donnée individuelle n'est affichée** : seulement des moyennes de groupes, et jamais un groupe de **moins de 100 utilisateurs**.
 - **Résultats identiques à chaque exécution** : aucun tirage aléatoire.
-- **« À temps égal »** : on compare des utilisateurs qui passent le même temps sur Instagram (par tranches de 10 minutes), pour savoir si une habitude compte **en plus** du temps passé.
+- **« À temps égal »** : on compare des utilisateurs qui passent le même temps sur Instagram (par tranches de 10 minutes). C'est ce qui permet de savoir si une habitude compte **en plus** du temps passé.
 - **Ce sont des corrélations**, pas des preuves de cause à effet.
 """)
+    st.subheader("Le plan", anchor=False)
+    parties = [p for p in ordre if p.url_path not in ("", PAGE_PAR_DEFAUT)]
+    moitie = (len(parties) + 1) // 2
+    for colonne, groupe in zip(st.columns(2), (parties[:moitie], parties[moitie:])):
+        with colonne:
+            for page in groupe:
+                surtitre, titre_partie, _ = PARTIE[page.url_path]
+                numero = surtitre.replace("Partie ", "")
+                st.page_link(page, label=f"{numero} · {titre_partie}" if numero.isdigit() else titre_partie, icon=page.icon)
 
 
 def page_donnees():
-    entete("0 · Nettoyage et données", "Vérifier la qualité des données, choisir le bon fichier et construire les variables utiles.")
-    indicateurs(("Utilisateurs", fr(R["n"], 0), None), ("Colonnes", str(R["n_colonnes"]), None),
-                ("Valeurs manquantes", str(R["manquants"]), None), ("Doublons", str(R["doublons"] + R["doublons_id"]), None))
-    onglet_nettoyage, onglet_fichier, onglet_variables = st.tabs(["Incohérences", "Choix du fichier", "Variables construites"])
+    entete("donnees")
+    onglet_controles, onglet_nettoyage, onglet_fichier, onglet_variables = st.tabs(
+        ["0.1 · Contrôles de base", "0.2 · Incohérences", "0.3 · Choix du fichier", "0.4 · Variables construites"])
+
+    with onglet_controles:
+        st.subheader("Contrôles de base et variables inutiles", anchor=False)
+        indicateurs(("Utilisateurs", fr(R["n"], 0), None), ("Colonnes", str(R["n_colonnes"]), None),
+                    ("Valeurs manquantes", str(R["manquants"]), None), ("Doublons", str(R["doublons"] + R["doublons_id"]), None))
+        st.markdown("**Variables inutiles**")
+        tableau(R["inutiles"])
 
     with onglet_nettoyage:
-        st.subheader("Des incohérences signalées, pas supprimées")
-        indicateurs(("Lignes avec au moins une incohérence", f"{fr(R['part_signalees'], 0)} %", None),
-                    ("Stress expliqué par le temps, sans ces lignes", f"{fr(R['r2_sans_signalees'] * 100, 0)} %",
-                     "Contre 71 % avec toutes les lignes"))
+        st.subheader("Incohérences métier : signalées, pas supprimées", anchor=False)
+        st.markdown("Quatre règles repèrent des valeurs impossibles. Chaque ligne concernée reçoit un indicateur `flag_*`, sans être supprimée.")
         drapeaux = R["drapeaux"].reset_index()
         drapeaux["etiquette"] = drapeaux["part des lignes (%)"].map(lambda v: f"{fr(v)} %")
         base = alt.Chart(drapeaux).encode(
@@ -581,28 +651,28 @@ def page_donnees():
         montrer((base.mark_bar(size=20, cornerRadiusTopRight=4, cornerRadiusBottomRight=4, color=BLEU).encode(
             tooltip=[alt.Tooltip("indicateur:N", title="Indicateur"), alt.Tooltip("etiquette:N", title="Part des lignes")])
                  + base.mark_text(align="left", dx=6, fontSize=12, color=INK).encode(text="etiquette:N")).properties(
-            title=titre("Quatre règles d'incohérence", "Chaque ligne concernée reçoit un indicateur flag_*"), height=190))
-        st.markdown("""
+            title=titre("Quatre règles d'incohérence", "Part des lignes concernées par chaque règle"), height=190))
+        st.markdown(f"""
+- **{fr(R['part_signalees'], 0)} %** des lignes ont au moins une incohérence : comptes créés avant 13 ans, mineurs salariés ou mariés, sans-emploi (chômeurs ou retraités) qui déclarent des heures de travail.
 - Ces incohérences touchent l'emploi, la situation de couple, les heures de travail et l'année de création du compte : **aucune de ces colonnes ne sert à la segmentation**.
-- Sans les lignes signalées, le temps passé explique la même part du stress : **les résultats ne dépendent pas de ces lignes**.
+- Sans les lignes signalées, le temps passé explique toujours **{fr(R['r2_sans_signalees'] * 100, 0)} %** des écarts de stress : **les résultats ne dépendent pas de ces lignes**.
 """)
-        st.markdown("**Variables inutilisables**")
-        tableau(R["inutiles"])
 
     with onglet_fichier:
-        st.subheader("Quel fichier croire, et sur quels champs ?")
-        st.markdown("Instagram a fourni **deux versions** de la réplique (« usage » et « users »), dont l'une a subi un nettoyage non documenté.")
+        st.subheader("Quel fichier croire, et sur quels champs ?", anchor=False)
+        st.markdown("Instagram nous a envoyé **deux versions presque identiques** de la réplique (« usage » et « users »). L'une a subi un nettoyage non documenté. La consigne nous demande de décider laquelle croire, champ par champ.")
         comparaison = R["comparaison"]
         if comparaison is None:
             st.warning("Le fichier `instagram_users_lifestyleSafe.csv` est absent : la comparaison n'est pas recalculée.")
         else:
             indicateurs(("Colonnes identiques", f"{comparaison['identiques']} sur {comparaison['total']}", None),
-                        ("Mineurs déclarés salariés (fichier usage)", f"{fr(comparaison['mineurs'].iloc[0, 0], 0)} %",
-                         "Part des 13–17 ans déclarés salariés à temps plein ; 0 % dans le fichier users"),
+                        ("13–17 ans déclarés salariés (fichier usage)", f"{fr(comparaison['mineurs'].iloc[0, 0], 0)} %", None),
                         ("Colonnes utilisées identiques", "oui" if comparaison["utilisees_identiques"] else "non", None))
         st.markdown("""
-- **Toutes les colonnes que nous utilisons sont identiques dans les deux fichiers** : nos résultats ne dépendent pas de ce choix. Nous travaillons sur le fichier `usage`.
-- **Pour l'emploi et les heures de travail**, nous faisons confiance au fichier `users`, qui a corrigé l'incohérence des mineurs. Nous n'utilisons pas ces colonnes.
+**Notre décision**
+- Les deux fichiers ont les mêmes utilisateurs et **52 colonnes sur 58 identiques**. Dans le fichier `usage`, 45 % des 13–17 ans sont déclarés salariés à temps plein : le fichier `users` a corrigé cette incohérence.
+- **Toutes les colonnes que nous utilisons** sont **identiques dans les deux fichiers** : nos résultats ne dépendent pas de ce choix. Nous travaillons sur le fichier `usage`.
+- **Pour l'emploi et les heures de travail**, nous faisons confiance au fichier `users`. Nous n'utilisons pas ces colonnes.
 """)
         if comparaison is not None:
             with st.expander("Voir le détail de la comparaison"):
@@ -615,10 +685,10 @@ def page_donnees():
                     tableau(comparaison["mineurs"])
 
     with onglet_variables:
-        st.subheader("Trois variables construites")
+        st.subheader("Les variables construites", anchor=False)
         st.markdown("""
 - **Six segments de temps passé** (S1 à S6), dont les seuils séparent les niveaux de stress et de bonheur : moins de 20 min, 20–88 min, 88–188 min, 188–240 min, 240–290 min, plus de 290 min.
-- **Quatre groupes d'âge** (13–17, 18–34, 35–54, 55–65 ans), les mineurs à part pour des raisons légales.
+- **Quatre groupes d'âge** (13–17, 18–34, 35–54, 55–65 ans) : les mineurs à part, pour des raisons légales.
 - **Un indicateur « stress élevé »** (27 ou plus sur 40).
 """)
         apport = R["apport"].reset_index().rename(columns={"index": "decoupage", "part du stress expliquée (%)": "part"})
@@ -631,17 +701,17 @@ def page_donnees():
                  + base.mark_text(align="left", dx=6, fontSize=12, color=INK).encode(text="etiquette:N")).properties(
             title=titre("Six segments suffisent", "Part des écarts de stress expliquée par chaque découpage"), height=170))
 
-    retenir("Le fichier est complet et sans doublon ; les incohérences sont signalées sans changer les résultats ; six segments de temps conservent presque toute l'information du temps passé.")
+    retenir("Le fichier est complet et sans doublon ; les incohérences sont signalées sans changer les résultats ; les six segments de temps conservent presque toute l'information du temps passé (68 % des écarts de stress expliqués, contre 71 % avec le temps à 10 minutes près).")
 
 
 def page_hypotheses():
-    entete("1 · Les hypothèses non concluantes",
-           "Le sommeil, l'activité physique et le pays : trois pistes appuyées par des sources de santé publique, mais sans lien dans notre panel.")
-    onglet_sommeil, onglet_activite, onglet_pays = st.tabs(["Sommeil", "Activité physique", "Pays"])
+    entete("hypotheses")
+    st.markdown("Un indicateur sans lien avec l'usage est aussi un résultat. La durée des sessions est traitée avec la fréquence de connexion (partie 4.4).")
+    onglet_sommeil, onglet_activite, onglet_pays = st.tabs(["1.1 · Sommeil", "1.2 · Activité physique", "1.3 · Pays"])
 
     with onglet_sommeil:
-        st.subheader("Instagram fait-il baisser le sommeil, et le sommeil joue-t-il sur le bien-être ?")
-        st.caption("Source : [info.gouv.fr, 2025](https://www.info.gouv.fr/actualite/sante-mentale-pourquoi-le-sommeil-joue-un-role-cle) — « Avoir une bonne santé du sommeil contribue à avoir une bonne santé mentale. »")
+        st.subheader("Instagram fait-il baisser le nombre d'heures de sommeil ? Le manque de sommeil joue-t-il un rôle dans le bien-être ?", anchor=False)
+        st.caption("Source : [info.gouv.fr, « Santé mentale : pourquoi le sommeil joue un rôle clé », 2025](https://www.info.gouv.fr/actualite/sante-mentale-pourquoi-le-sommeil-joue-un-role-cle) — « Avoir une bonne santé du sommeil contribue à avoir une bonne santé mentale. »")
         sommeil = R["sommeil"].reset_index()
         sommeil["court"] = segment_vers_court(sommeil["segment"])
         sommeil["etiquette"] = sommeil["sommeil_moyen"].map(lambda v: f"{fr(v)} h")
@@ -651,11 +721,11 @@ def page_hypotheses():
                                "Segment de temps passé (S1 : moins de 20 min · S6 : plus de 290 min)", "Sommeil moyen (heures par nuit)",
                                COURTS, [0, 9], [alt.Tooltip("segment:N", title="Segment"), alt.Tooltip("etiquette:N", title="Sommeil moyen"),
                                                 alt.Tooltip("moins6:N", title="Dorment moins de 6 h")]))
-        st.markdown("Environ **7 h** de sommeil et **17 %** de petits dormeurs dans tous les segments. Le sommeil n'est lié ni au temps passé, ni au stress, ni au bonheur.")
+        st.markdown("Le sommeil moyen est d'environ **7 h** et la part de petits dormeurs (moins de 6 h) d'environ **17 %**, dans tous les segments.")
 
     with onglet_activite:
-        st.subheader("Instagram fait-il baisser l'activité physique, et l'activité joue-t-elle sur le bien-être ?")
-        st.caption("Source : [Ameli](https://www.ameli.fr/assure/sante/themes/activite-physique-sante/sport-et-activite-physique-un-atout-pour-le-bien-etre) — l'activité physique réduit le stress et l'anxiété, régule l'humeur et améliore le sommeil.")
+        st.subheader("Le temps passé sur Instagram fait-il baisser l'activité physique ? L'activité physique joue-t-elle un rôle sur le bien-être ?", anchor=False)
+        st.caption("Source : [Ameli, « Sport et activité physique : un atout pour le bien-être »](https://www.ameli.fr/assure/sante/themes/activite-physique-sante/sport-et-activite-physique-un-atout-pour-le-bien-etre) — l'activité physique réduit le stress et l'anxiété, régule l'humeur et améliore le sommeil.")
         activite = R["activite"].reset_index()
         activite["court"] = segment_vers_court(activite["segment"])
         activite["etiquette_pas"] = activite["pas_par_jour"].map(lambda v: fr(v, 0))
@@ -670,10 +740,11 @@ def page_hypotheses():
                                    titre("Sport (heures par semaine)", "Moyenne par segment"), "Segment de temps passé",
                                    "Heures de sport par semaine", COURTS, [0, 8.5],
                                    [alt.Tooltip("segment:N", title="Segment"), alt.Tooltip("etiquette_sport:N", title="Sport par semaine")]))
-        st.markdown(f"Environ **8 000 pas par jour** et **7,2 h de sport par semaine** dans tous les segments. Les pas varient à peine (98 % des utilisateurs entre {fr(R['pas_bornes'][0], 0)} et {fr(R['pas_bornes'][1], 0)}) : cette variable ne distingue aucun profil.")
+        st.markdown(f"Environ **8 000 pas par jour** et **7,1 à 7,2 h de sport par semaine** dans tous les segments. Le nombre de pas varie à peine (98 % des utilisateurs entre {fr(R['pas_bornes'][0], 0)} et {fr(R['pas_bornes'][1], 0)}) : cette variable ne permet pas de distinguer des profils. Ni le sommeil, ni les pas, ni le sport ne sont liés au temps passé, au stress ou au bonheur (corrélations proches de 0).")
+        chiffres(R["correlations_vie"], 3, titre="Voir les corrélations du sommeil, des pas et du sport (de −1 à 1, 0 = aucun lien)")
 
     with onglet_pays:
-        st.subheader("Le pays change-t-il le bien-être ?")
+        st.subheader("Le pays change-t-il le bien-être ?", anchor=False)
         pays = R["pays"].reset_index().rename(columns={"index": "pays"})
         pays["stress_txt"] = pays["stress"].map(fr)
         pays["bonheur_txt"] = pays["bonheur"].map(lambda v: fr(v, 2))
@@ -690,19 +761,18 @@ def page_hypotheses():
                                    "Bonheur moyen (1–10)", ordre_pays, [0, 7],
                                    [alt.Tooltip("pays:N", title="Pays"), alt.Tooltip("bonheur_txt:N", title="Bonheur moyen"),
                                     alt.Tooltip("n_txt:N", title="Utilisateurs")], couleur=ROUGE, angle=-35))
-        st.markdown("Dans les 10 pays, le stress reste entre **19,9 et 20,3** et le bonheur entre **5,45 et 5,55**, pour le même temps passé (environ 3 h 10 par jour).")
+        st.markdown("Dans les 9 pays et le groupe « Autres pays », le stress moyen reste entre **19,9 et 20,3** et le bonheur entre **5,45 et 5,55**, avec le même temps passé (environ 3 h 10 par jour). À temps égal, les écarts restent inférieurs à 0,2 point.")
 
-    chiffres(R["correlations_vie"], 3, titre="Voir les corrélations du sommeil, des pas et du sport (de −1 à 1, 0 = aucun lien)")
     retenir("Le sommeil, l'activité physique et le pays ne sont pas liés à l'usage d'Instagram ni au bien-être dans notre panel. Nos sources laissaient attendre un effet du sommeil et du sport : c'est une limite de la réplique synthétique (partie 8).")
 
 
 def page_temps():
-    entete("2 · Le temps passé sur Instagram", "Le cœur du lien entre l'usage et le bien-être.")
+    entete("temps-passe")
     onglet_stress, onglet_bonheur = st.tabs(["2.1 · Stress", "2.2 · Bonheur"])
     segments = R["segments_temps"]
 
     with onglet_stress:
-        st.subheader("Le temps passé est-il le facteur d'usage le plus lié au stress ?")
+        st.subheader("Le temps passé chaque jour est-il le facteur d'usage le plus lié au stress ?", anchor=False)
         indicateurs(("Stress expliqué par le temps passé", f"{fr(R['r2_stress'] * 100, 0)} %", None),
                     ("Stress en plus par heure", f"+{fr(R['pente'])} pt", None),
                     ("Stress élevé en S6 (plus de 290 min)", f"{fr(segments.loc['S6 Très intensif', 'part_stress_eleve'], 0)} %", None))
@@ -742,23 +812,23 @@ def page_temps():
             montrer(barres_simples(seg, "court", "stress", "stress_txt", titre("Stress moyen par segment", "Échelle de 0 à 40"),
                                    "Segment de temps passé", "Stress moyen (0–40)", COURTS, [0, 40], infobulle))
         with droite:
-            montrer(barres_simples(seg, "court", "bonheur", "bonheur_txt", titre("Bonheur moyen par segment", "Échelle de 1 à 10"),
-                                   "Segment de temps passé", "Bonheur moyen (1–10)", COURTS, [0, 9], infobulle, couleur=ROUGE))
+            montrer(barres_simples(seg, "court", "part_stress_eleve", "eleve_txt",
+                                   titre("Part des utilisateurs en stress élevé", "Stress de 27 ou plus sur 40"),
+                                   "Segment de temps passé", "Utilisateurs en stress élevé", COURTS, [0, 100], infobulle, axe_y=AXE_POURCENT))
         st.markdown("""
-- Le stress **monte régulièrement** : environ **+5,4 points par heure**, de 4,3 en S1 à 33,5 en S6.
-- Le bonheur **chute surtout aux deux extrêmes** : de 8,0 en S1 à 6,6 en S2, puis entre 5,7 et 5,2 de S3 à S5, avant 3,9 en S6.
-- Les **seuils de 20 min et d'environ 4 h 50** marquent ces deux chutes : c'est ce que la segmentation apporte de plus qu'un simple classement par temps passé.
+- Le stress **monte régulièrement** : environ **+5,4 points par heure**, de 4,3 en S1 à 33,5 en S6. Le temps passé explique à lui seul **71 %** des écarts de stress.
+- La part d'utilisateurs en **stress élevé** passe de **0 %** en S1 et S2 à **89 %** en S6.
 """)
         affichage = segments.copy()
         affichage.insert(0, "temps par jour", DUREES_SEGMENTS)
         chiffres(affichage.rename(columns={"n": "utilisateurs", "minutes": "temps moyen (min)", "stress": "stress (0–40)",
                                            "bonheur": "bonheur (1–10)", "part_stress_eleve": "stress élevé (%)"}).rename_axis("segment"),
                  titre="Voir les six segments en chiffres")
-        st.caption("Sources : [Riehm et al., 2019](https://hub.jhu.edu/2019/09/11/social-media-teen-mental-health/) — au-delà de 3 h par jour, le risque d'anxiété et de dépression des adolescents augmente · [Liu et al., 2022](https://pmc.ncbi.nlm.nih.gov/articles/PMC9103874/) — chaque heure de plus par jour va avec environ 13 % de risque de dépression en plus.")
+        st.caption("Sources : [Riehm et al., 2019 (Johns Hopkins)](https://hub.jhu.edu/2019/09/11/social-media-teen-mental-health/) — au-delà de 3 h par jour, le risque d'anxiété et de dépression des adolescents augmente · [Liu et al., 2022](https://pmc.ncbi.nlm.nih.gov/articles/PMC9103874/) — chaque heure de plus par jour va avec environ 13 % de risque de dépression en plus.")
         retenir("Le temps passé est le facteur d'usage le plus lié au stress, de façon régulière : c'est l'indicateur numéro un pour repérer les groupes les plus stressés, et Instagram le mesure déjà pour tous ses utilisateurs.")
 
     with onglet_bonheur:
-        st.subheader("Le temps passé chaque jour est-il aussi lié au bonheur ?")
+        st.subheader("Le temps passé chaque jour est-il aussi lié au bonheur ?", anchor=False)
         profils = R["profils_temps"]
         indicateurs(("Temps médian des plus heureux", f"{fr(profils.loc['temps médian par jour (min)', 'Plus heureux (9–10)'], 0)} min", None),
                     ("Temps médian des moins heureux", f"{fr(profils.loc['temps médian par jour (min)', 'Moins heureux (1–2)'], 0)} min", None),
@@ -779,28 +849,26 @@ def page_temps():
             tooltip=[alt.Tooltip("segment:N", title="Segment"), alt.Tooltip("groupe:N", title="Groupe"), alt.Tooltip("etiquette:N", title="Part")])
         extremites = base.mark_text(dy=-12, fontSize=12, color=INK2).encode(text="etiquette:N", color=alt.value(INK2)).transform_filter(
             alt.FieldOneOfPredicate(field="court", oneOf=["S1", "S6"]))
-        medianes = pd.DataFrame({"groupe": ["Plus heureux (9–10)", "Moins heureux (1–2)"],
-                                 "minutes": [profils.loc["temps médian par jour (min)", "Plus heureux (9–10)"],
-                                             profils.loc["temps médian par jour (min)", "Moins heureux (1–2)"]]})
-        medianes["etiquette"] = medianes["minutes"].map(lambda v: f"{fr(v, 0)} min")
-        gauche, droite = st.columns([2.2, 1])
+        bonheur_seg = R["segments_temps"].reset_index()
+        bonheur_seg["court"] = segment_vers_court(bonheur_seg["segment"])
+        bonheur_seg["duree"] = DUREES_SEGMENTS
+        bonheur_seg["bonheur_txt"] = bonheur_seg["bonheur"].map(fr)
+        gauche, droite = st.columns([1.4, 1])
         with gauche:
             montrer((lignes + extremites).properties(title=titre("La part de très heureux s'effondre avec le temps passé",
                                                                  "Part des utilisateurs très heureux et très malheureux par segment"), height=350))
         with droite:
-            base_m = alt.Chart(medianes).encode(x=alt.X("groupe:N", sort=None, title=None, axis=alt.Axis(labelAngle=0, labelLimit=200)),
-                                                y=alt.Y("minutes:Q", title="Temps médian par jour (min)", scale=alt.Scale(domain=[0, 290])))
-            montrer((base_m.mark_bar(size=48, cornerRadiusTopLeft=4, cornerRadiusTopRight=4).encode(
-                color=alt.Color("groupe:N", scale=alt.Scale(domain=list(medianes["groupe"]), range=[BLEU, ROUGE]), legend=None),
-                tooltip=[alt.Tooltip("groupe:N", title="Groupe"), alt.Tooltip("etiquette:N", title="Temps médian")])
-                     + base_m.mark_text(dy=-9, fontSize=12.5, color=INK).encode(text="etiquette:N")).properties(
-                title=titre("Deux fois moins de temps", "Temps médian passé chaque jour"), height=350))
+            montrer(barres_simples(bonheur_seg, "court", "bonheur", "bonheur_txt", titre("Bonheur moyen par segment", "Échelle de 1 à 10"),
+                                   "Segment de temps passé", "Bonheur moyen (1–10)", COURTS, [0, 9],
+                                   [alt.Tooltip("segment:N", title="Segment"), alt.Tooltip("duree:N", title="Temps par jour"),
+                                    alt.Tooltip("bonheur_txt:N", title="Bonheur moyen")], couleur=ROUGE, hauteur=350))
         st.markdown("""
-- En S1 (moins de 20 min par jour), près de **la moitié** des utilisateurs sont très heureux ; en S6, ils ne sont plus que **6 %**, et plus d'un tiers sont très malheureux.
-- Les plus heureux passent **deux fois moins de temps** sur l'application que les moins heureux, et l'ouvrent moins souvent.
+- En S1 (moins de 20 min par jour), près de **la moitié** des utilisateurs sont très heureux ; en S6 (plus de 290 min), ils ne sont plus que **6 %**, et plus d'un tiers sont très malheureux.
+- Le bonheur moyen **chute surtout aux deux extrêmes** : de 8,0 en S1 à 6,6 en S2, puis il reste entre 5,7 et 5,2 de S3 à S5, avant de tomber à 3,9 en S6. Les **seuils de 20 min et d'environ 4 h 50** (290 min) marquent ces deux chutes : c'est ce que la segmentation apporte de plus qu'un simple classement par temps passé.
+- Les plus heureux passent **deux fois moins de temps** sur l'application que les moins heureux (temps médian), et l'ouvrent moins souvent que les autres utilisateurs.
 """)
         chiffres(R["bonheur_segments"].rename_axis("segment"), titre="Voir les parts par segment")
-        st.markdown("**Le temps passé et l'activité disent la même chose.** Les compteurs d'activité sont presque des copies du temps passé : plus on reste, plus on agit. Ils n'apportent donc pas d'information en plus (partie 4).")
+        st.markdown("**Note : le temps passé et l'activité disent la même chose.** Les compteurs d'activité (likes, stories, commentaires, messages, publicités, sessions) sont presque des copies du temps passé : plus on reste, plus on agit. Ils n'apportent donc pas d'information en plus (partie 4).")
         copies = R["copies"].reset_index().rename(columns={"index": "variable", "corrélation avec le temps passé": "correlation"})
         copies["etiquette"] = copies["correlation"].map(lambda v: fr(v, 2))
         base = alt.Chart(copies).encode(
@@ -811,15 +879,16 @@ def page_temps():
             tooltip=[alt.Tooltip("variable:N", title="Variable"), alt.Tooltip("etiquette:N", title="Corrélation")])
                  + base.mark_text(align="left", dx=6, fontSize=12, color=INK).encode(text="etiquette:N")).properties(
             title=titre("Les compteurs d'activité suivent le temps passé", "Corrélation de chaque compteur avec le temps passé par jour"), height=240))
-        retenir("Les plus heureux sont ceux qui utilisent le moins Instagram, en temps comme en nombre de sessions.")
+        retenir("Le temps passé est aussi lié au bonheur : les plus heureux sont ceux qui utilisent le moins Instagram, en temps comme en nombre de sessions.")
 
 
 def page_age():
-    entete("3 · Le rôle de l'âge", "L'âge est la seule variable, en dehors du temps passé, qui change le lien avec le stress.")
-    onglet_egal, onglet_exposition = st.tabs(["À usage égal", "Exposition des plus jeunes"])
+    entete("age")
+    onglet_egal, onglet_exposition = st.tabs(["3.1 · À usage égal", "3.2 · Exposition des plus jeunes"])
 
     with onglet_egal:
-        st.subheader("D'après l'âge, à usage égal, qui est le plus stressé ?")
+        st.subheader("D'après l'âge, à usage égal, qui est le plus stressé ?", anchor=False)
+        st.markdown("Pour comparer des utilisateurs à usage égal, on regarde le segment **S4 Soutenu** (188 à 240 min par jour, environ 3 h 30 en moyenne dans chaque tranche d'âge).")
         age = R["age_s4"]
         indicateurs(("Stress des 13–17 ans en S4", fr(age.loc["13–17 ans", "stress"]), None),
                     ("Stress des 55–65 ans en S4", fr(age.loc["55–65 ans", "stress"]), None),
@@ -839,59 +908,46 @@ def page_age():
         montrer(carte_chaleur(grille, "court", "tranche_age", "stress", "etiquette", COURTS, TRANCHES_AGE, [0, 40], "Stress moyen", 22,
                               [alt.Tooltip("tranche_age:N", title="Âge"), alt.Tooltip("segment:N", title="Segment"),
                                alt.Tooltip("etiquette:N", title="Stress moyen"), alt.Tooltip("n_txt:N", title="Utilisateurs")],
-                              titre("Le même écart d'âge dans tous les segments", "Stress moyen par âge et par segment"),
+                              titre("Dans tous les segments, les plus âgés sont plus stressés", "Stress moyen par âge et par segment"),
                               "Segment de temps passé"))
-        st.markdown("À temps égal, le stress augmente de **+1,2 point par tranche de 10 ans**, de 18,9 chez les 13–17 ans à 26,6 chez les 55–65 ans en S4, et le même écart se retrouve dans tous les segments.")
+        st.markdown("""
+- En S4, le stress passe de **18,9** chez les 13–17 ans à **26,6** chez les 55–65 ans.
+- Dans tous les segments, les plus âgés sont plus stressés que les plus jeunes ; l'écart est le plus fort dans les segments intermédiaires (jusqu'à 7,7 points en S4).
+- Sur l'ensemble des utilisateurs, à temps passé égal, chaque tranche de 10 ans d'âge en plus va avec **+1,2 point** de stress.
+""")
         retenir("À usage égal, ce sont les plus âgés qui sont les plus stressés : l'âge apporte une information en plus du temps passé.")
 
     with onglet_exposition:
-        st.subheader("Les plus jeunes passent-ils plus de temps sur Instagram ?")
+        st.subheader("Les plus jeunes passent-ils plus de temps sur Instagram ?", anchor=False)
         exposition = R["exposition"].reset_index()
         exposition["etiquette"] = exposition["part_3h_ou_plus"].map(lambda v: f"{fr(v)} %")
         exposition["minutes_txt"] = exposition["minutes"].map(lambda v: f"{fr(v, 0)} min")
-        indicateurs(("13–17 ans à 3 h ou plus par jour", exposition.loc[0, "etiquette"], None),
-                    ("55–65 ans à 3 h ou plus par jour", exposition.loc[len(exposition) - 1, "etiquette"], None))
+        indicateurs(("13–17 ans à 3 h ou plus par jour", f"{fr(exposition.loc[0, 'part_3h_ou_plus'], 0)} %", None),
+                    ("55–65 ans à 3 h ou plus par jour", f"{fr(exposition.loc[len(exposition) - 1, 'part_3h_ou_plus'], 0)} %", None))
         montrer(barres_simples(exposition, "tranche_age", "part_3h_ou_plus", "etiquette",
                                titre("Plus on est jeune, plus on passe de temps sur Instagram", "Part des utilisateurs à 3 h ou plus par jour"),
                                None, "Utilisateurs à 3 h ou plus par jour", TRANCHES_AGE, [0, 75],
                                [alt.Tooltip("tranche_age:N", title="Âge"), alt.Tooltip("etiquette:N", title="À 3 h ou plus"),
                                 alt.Tooltip("minutes_txt:N", title="Temps moyen par jour")], axe_y=AXE_POURCENT))
-        st.markdown("Le temps moyen baisse régulièrement avec l'âge, de 223 à 159 minutes par jour.")
-        conclusion_produit("Les plus jeunes sont les plus exposés en temps passé. Ce sont eux que les outils de limitation de temps touchent le plus souvent, et ils incluent des mineurs, qui demandent des précautions particulières.")
-        st.caption("Source : [question écrite à l'Assemblée nationale citant le rapport « Enfants et écrans » (2024)](https://www.assemblee-nationale.fr/dyn/16/questions/QANR5L16QE18298.pdf) — chez les 16–19 ans, le temps d'écran dépasse les cinq heures ; les réseaux sociaux sont un « facteur de risque » de dépression ou d'anxiété en cas de « vulnérabilité préexistante ».")
+        st.markdown("**63 %** des 13–17 ans passent 3 h ou plus par jour sur Instagram, contre **43 %** des 55–65 ans. Le temps moyen baisse de 223 à 159 minutes par jour.")
+        conclusion_produit("Avec un même seuil de temps pour tous, ce sont les plus jeunes que les outils de limitation toucheraient le plus souvent ; ils incluent des mineurs, qui demandent des précautions particulières.")
+        st.caption("Source : [question écrite à l'Assemblée nationale citant le rapport « Enfants et écrans » (2024)](https://www.assemblee-nationale.fr/dyn/16/questions/QANR5L16QE18298.pdf) — chez les 16–19 ans, le temps d'écran dépasse les cinq heures ; les experts évoquent la nocivité des réseaux sociaux, « facteur de risque » de dépression ou d'anxiété en cas de « vulnérabilité préexistante ».")
         retenir("Deux effets opposés : les jeunes sont plus exposés en temps, les plus âgés sont plus stressés à temps égal.")
 
 
 def page_habitudes():
-    entete("4 · Les habitudes d'utilisation", "Au-delà du temps passé, la façon d'utiliser Instagram est-elle liée au bien-être ?")
+    entete("habitudes")
     usage = R["usage_bonheur"]
     createurs = R["createurs"]
     quintiles = R["prive"]["quintile_prive"]
     connexion, meme = R["connexion"], R["connexion_meme_temps"]
 
     st.markdown("Pour chaque habitude, on compare l'écart **brut** et l'écart **à temps passé égal**, c'est-à-dire entre utilisateurs qui passent le même temps sur l'application.")
-    synthese = pd.DataFrame([
-        ("4.1 · Moins heureux / plus heureux", "sessions par jour",
-         pourcent(usage.loc["Sessions par jour", "différence (%)"], 0, signe=True),
-         pourcent(usage.loc["Sessions par jour", "différence à temps égal (%)"], 0, signe=True)),
-        ("4.2 · Créateurs / consommateurs", "bonheur (1–10)",
-         points(createurs["bonheur"].iloc[2] - createurs["bonheur"].iloc[0]),
-         points(createurs["bonheur_egal"].iloc[2] - createurs["bonheur_egal"].iloc[0]) + " (à âge égal aussi)"),
-        ("4.3 · Activité la plus privée / la plus publique", "stress (0–40)",
-         points(quintiles["stress"].iloc[4] - quintiles["stress"].iloc[0]),
-         points(quintiles["stress_temps_egal"].iloc[4] - quintiles["stress_temps_egal"].iloc[0])),
-        ("4.4 · Profil réflexe / profil immersion", "stress (0–40)",
-         points(connexion.loc["Réflexe", "stress"] - connexion.loc["Immersion", "stress"]),
-         points(meme.loc["Réflexe", "stress"] - meme.loc["Immersion", "stress"])),
-    ], columns=["comparaison", "indicateur", "écart brut", "écart à temps passé égal"]).set_index("comparaison")
-    st.markdown("**Synthèse des quatre comparaisons**")
-    st.table(synthese)
-    retenir("Les moins heureux et les plus stressés ont un usage plus intensif : plus de temps passé, plus d'actions, plus de publications, une activité plus publique et des connexions plus fréquentes.")
 
-    onglets = st.tabs(["4.1 · Intensité d'usage", "4.2 · Créer ou consommer", "4.3 · Privé ou public", "4.4 · Réflexe ou immersion"])
+    onglets = st.tabs(["4.1 · Intensité d'usage", "4.2 · Créer ou consommer", "4.3 · Privé ou public", "4.4 · Réflexe ou immersion", "4.5 · Synthèse"])
 
     with onglets[0]:
-        st.subheader("Les moins heureux ont-ils un usage plus intensif ?")
+        st.subheader("Les moins heureux ont-ils un usage plus intensif ?", anchor=False)
         moins, plus = R["n_moins_plus"]
         st.caption(f"Moins heureux : bonheur de 1 ou 2 ({fr(moins, 0)} utilisateurs) · plus heureux : bonheur de 9 ou 10 ({fr(plus, 0)} utilisateurs).")
         indicateurs(("Temps passé par jour", f"{fr(usage.loc['Temps total sur Instagram (min par jour)', 'moins heureux (1–2)'], 0)} / {fr(usage.loc['Temps total sur Instagram (min par jour)', 'plus heureux (9–10)'], 0)} min",
@@ -926,7 +982,7 @@ def page_habitudes():
         retenir("Les moins heureux ont un usage beaucoup plus intensif, sur toutes les fonctionnalités ; les plus heureux agissent moins, avec un score d'engagement deux fois plus élevé.")
 
     with onglets[1]:
-        st.subheader("Les créateurs de contenu sont-ils moins heureux que les consommateurs ?")
+        st.subheader("Les créateurs de contenu sont-ils moins heureux que les consommateurs ?", anchor=False)
         st.caption("Consommateur : 0 à 3 publications par semaine · intermédiaire : 4 à 7 · créateur : 8 et plus.")
         indicateurs(("Bonheur : consommateurs / créateurs", f"{fr(createurs['bonheur'].iloc[0])} / {fr(createurs['bonheur'].iloc[2])}", None),
                     ("Stress : consommateurs / créateurs", f"{fr(createurs['stress'].iloc[0])} / {fr(createurs['stress'].iloc[2])}", None),
@@ -977,8 +1033,8 @@ def page_habitudes():
         retenir("Les consommateurs sont plus heureux et moins stressés que les créateurs ; les créateurs sont plus jeunes et passent deux fois plus de temps sur l'application.")
 
     with onglets[2]:
-        st.subheader("L'activité privée est-elle liée à un meilleur bien-être que l'activité publique ?")
-        st.caption("Activité privée : messages privés envoyés · activité publique : likes et commentaires · part d'activité privée en 5 groupes de taille égale, du plus public (Q1) au plus privé (Q5).")
+        st.subheader("L'activité privée est-elle liée à un meilleur bien-être que l'activité publique ?", anchor=False)
+        st.caption("Activité privée : les messages privés envoyés · activité publique : les likes et les commentaires · part d'activité privée : part des messages dans l'ensemble des interactions, en 5 groupes de taille égale, du plus public (Q1) au plus privé (Q5).")
         indicateurs(("Stress : Q5 le plus privé / Q1 le plus public", f"{fr(quintiles['stress'].iloc[4])} / {fr(quintiles['stress'].iloc[0])}", None),
                     ("Bonheur : Q5 / Q1", f"{fr(quintiles['bonheur'].iloc[4])} / {fr(quintiles['bonheur'].iloc[0])}", None),
                     ("Temps passé : Q5 / Q1", f"{fr(quintiles['minutes'].iloc[4], 0)} / {fr(quintiles['minutes'].iloc[0], 0)} min", None))
@@ -1012,12 +1068,12 @@ def page_habitudes():
                 "minutes": "temps par jour (min)", "likes": "likes par jour", "commentaires": "commentaires par jour",
                 "messages": "messages par semaine"}).rename_axis("groupe"))
             tableau(comptes.rename(columns={"minutes": "temps par jour (min)"}).rename_axis("réglage du compte"))
-        retenir("Les utilisateurs à l'activité la plus privée sont deux fois moins stressés et plus heureux, et passent 2,5 fois moins de temps sur Instagram.")
+        retenir("Les utilisateurs à l'activité la plus privée sont deux fois moins stressés et plus heureux, et passent 2,6 fois moins de temps sur Instagram.")
 
     with onglets[3]:
-        st.subheader("Se connecter souvent pour de courtes sessions est-il lié à plus de stress ?")
+        st.subheader("Se connecter souvent pour de courtes sessions est-il lié à plus de stress ?", anchor=False)
         mediane_sessions, mediane_duree = R["medianes_connexion"]
-        st.caption(f"Profil réflexe : plus de {fr(mediane_sessions, 0)} sessions par jour et des sessions de moins de {fr(mediane_duree)} min (les médianes) · profil immersion : l'inverse.")
+        st.caption(f"Profil réflexe : beaucoup de connexions courtes, soit plus de sessions par jour que la médiane ({fr(mediane_sessions, 0)}) et des sessions plus courtes que la médiane ({fr(mediane_duree)} min) · profil immersion : peu de connexions mais longues, soit moins de sessions par jour que la médiane et des sessions plus longues que la médiane.")
         indicateurs(("Stress : réflexe / immersion", f"{fr(connexion.loc['Réflexe', 'stress'])} / {fr(connexion.loc['Immersion', 'stress'])}", None),
                     ("Temps total : réflexe / immersion", f"{fr(connexion.loc['Réflexe', 'minutes'], 0)} / {fr(connexion.loc['Immersion', 'minutes'], 0)} min", None),
                     ("Stress à temps total égal (2 à 3 h)", f"{fr(meme.loc['Réflexe', 'stress'])} / {fr(meme.loc['Immersion', 'stress'])}", None))
@@ -1041,7 +1097,7 @@ def page_habitudes():
         with droite:
             st.markdown(f"""
 - Les « réflexe » ouvrent Instagram **{fr(connexion.loc['Réflexe', 'sessions'], 0)} fois par jour** pour des sessions de {fr(connexion.loc['Réflexe', 'duree'], 0)} min ; les « immersion », {fr(connexion.loc['Immersion', 'sessions'], 0)} fois pour {fr(connexion.loc['Immersion', 'duree'], 0)} min.
-- Les « réflexe » sont **{pourcent((connexion.loc['Réflexe', 'stress'] / connexion.loc['Immersion', 'stress'] - 1) * 100, 0)} plus stressés**, et y passent plus de temps au total, car le temps total est égal aux sessions multipliées par leur durée.
+- Les « réflexe » sont **{pourcent((connexion.loc['Réflexe', 'stress'] / connexion.loc['Immersion', 'stress'] - 1) * 100, 0)} plus stressés**, et y passent plus de temps au total ({fr(connexion.loc['Réflexe', 'minutes'], 0)} min par jour contre {fr(connexion.loc['Immersion', 'minutes'], 0)}), car le temps total est égal aux sessions multipliées par leur durée.
 - À temps total égal (2 à 3 h par jour), les deux profils ont le même stress : la durée des sessions, seule, n'est pas liée au stress.
 """)
         affichage = connexion.rename(columns={"n": "utilisateurs", "sessions": "sessions par jour", "duree": "durée d'une session (min)",
@@ -1050,9 +1106,28 @@ def page_habitudes():
         conclusion_produit("Un rappel de temps doit compter le temps cumulé de la journée, pas seulement la durée d'une session.")
         retenir("Ouvrir Instagram très souvent dans la journée, même pour de courtes sessions, va avec nettement plus de stress que se connecter moins souvent mais plus longtemps.")
 
+    with onglets[4]:
+        st.subheader("Synthèse des quatre comparaisons", anchor=False)
+        synthese = pd.DataFrame([
+            ("4.1 · Moins heureux / plus heureux", "sessions par jour",
+             pourcent(usage.loc["Sessions par jour", "différence (%)"], 0, signe=True),
+             pourcent(usage.loc["Sessions par jour", "différence à temps égal (%)"], 0, signe=True)),
+            ("4.2 · Créateurs / consommateurs", "bonheur (1–10)",
+             points(createurs["bonheur"].iloc[2] - createurs["bonheur"].iloc[0]),
+             points(createurs["bonheur_egal"].iloc[2] - createurs["bonheur_egal"].iloc[0]) + " (à âge égal aussi)"),
+            ("4.3 · Activité la plus privée / la plus publique", "stress (0–40)",
+             points(quintiles["stress"].iloc[4] - quintiles["stress"].iloc[0]),
+             points(quintiles["stress_temps_egal"].iloc[4] - quintiles["stress_temps_egal"].iloc[0])),
+            ("4.4 · Profil réflexe / profil immersion", "stress (0–40)",
+             points(connexion.loc["Réflexe", "stress"] - connexion.loc["Immersion", "stress"]),
+             points(meme.loc["Réflexe", "stress"] - meme.loc["Immersion", "stress"])),
+        ], columns=["comparaison", "indicateur", "écart brut", "écart à temps passé égal"]).set_index("comparaison")
+        st.table(synthese)
+        retenir("Les moins heureux et les plus stressés ont un usage plus intensif : plus de temps passé, plus d'actions, plus de publications, une activité plus publique et des connexions plus fréquentes.")
+
 
 def page_stress_bonheur():
-    entete("5 · Stress et bonheur", "Le stress lié à l'usage s'accompagne-t-il d'une baisse de bonheur ?")
+    entete("stress-et-bonheur")
     indicateurs(("Stress expliqué par le temps passé", f"{fr(R['r2_stress'] * 100, 0)} %", None),
                 ("Bonheur expliqué par le temps passé", f"{fr(R['r2_bonheur'] * 100, 0)} %", None))
     data = R["stress_30min"].reset_index()
@@ -1085,8 +1160,7 @@ def page_stress_bonheur():
                     "Moyennes par tranche de 30 minutes, ramenées sur une même échelle : stress sur 40, bonheur sur 10"),
         height=420))
     st.markdown("""
-- Le **stress** (en bleu) monte **régulièrement** avec le temps passé.
-- Le **bonheur** (en rouge) baisse surtout **aux deux extrêmes** : très vite après les premières minutes, puis au-delà d'environ 4 h 50 par jour. Entre les deux, il change peu.
+- Les deux courbes n'ont pas la même forme : le **stress** (en bleu) monte **régulièrement** avec le temps passé, alors que le **bonheur** (en rouge) ne baisse nettement qu'**aux deux extrêmes** (zones rouges, partie 2.2).
 - Le temps passé explique **71 %** des écarts de stress, mais seulement **16 %** des écarts de bonheur.
 """)
     conclusion_produit("Il faut suivre le stress et le bonheur séparément : un utilisateur peut être très stressé et très heureux à la fois. Le lien principal d'Instagram est avec le stress.")
@@ -1095,12 +1169,12 @@ def page_stress_bonheur():
 
 
 def page_segmentation():
-    entete("6 · La segmentation", "Deux informations suffisent : le segment de temps passé (S1 à S6) et le groupe d'âge, connus pour tous les utilisateurs.")
+    entete("segmentation")
     onglet_methode, onglet_carte, onglet_criteres, onglet_profils = st.tabs(
-        ["Méthode", "Carte et simulateur", "Critères de qualité", "Profils de bien-être"])
+        ["6.1 · Méthode", "6.2 · Carte et simulateur", "6.3 · Critères de qualité", "6.4 · Profils de bien-être"])
 
     with onglet_methode:
-        st.subheader("Pourquoi des segments par paliers plutôt qu'un regroupement automatique ?")
+        st.subheader("Pourquoi des segments par paliers plutôt qu'un regroupement automatique ?", anchor=False)
         st.markdown("""
 La consigne propose deux voies : **prédire un indicateur de bien-être** à partir de l'usage, ou **regrouper automatiquement** les utilisateurs (*clustering*). Nous avons choisi la première, sous une forme simple : des **segments par paliers** de temps passé, croisés avec l'âge.
 - **Un regroupement automatique retrouverait surtout le temps passé** : les compteurs d'activité en sont presque des copies (partie 2.2), et les habitudes d'utilisation n'ajoutent rien à temps égal (partie 4).
@@ -1109,7 +1183,7 @@ La consigne propose deux voies : **prédire un indicateur de bien-être** à par
 """)
 
     with onglet_carte:
-        st.subheader("Carte des segments et affectation d'un nouvel utilisateur")
+        st.subheader("Carte des segments et affectation d'un nouvel utilisateur", anchor=False)
         st.markdown("Entrez l'âge et le temps quotidien d'un **utilisateur fictif** : son segment est encadré sur la carte.")
         col_age, col_minutes = st.columns(2)
         age = col_age.slider("Âge", min_value=13, max_value=65, value=16)
@@ -1131,21 +1205,26 @@ La consigne propose deux voies : **prédire un indicateur de bien-être** à par
                               [alt.Tooltip("groupe_age:N", title="Âge"), alt.Tooltip("segment:N", title="Segment"),
                                alt.Tooltip("etiquette:N", title="En stress élevé"), alt.Tooltip("stress_txt:N", title="Stress moyen"),
                                alt.Tooltip("n_txt:N", title="Utilisateurs")],
-                              titre("Part des utilisateurs en stress élevé, par segment", "24 segments · cadre orange : l'utilisateur simulé"),
+                              titre("Carte des segments : part des utilisateurs en stress élevé",
+                                    "24 segments construits uniquement à partir du temps passé et de l'âge · cadre orange : l'utilisateur simulé"),
                               "Segment de temps passé (S1 : moins de 20 min · S6 : plus de 290 min)",
                               surligner={"court": segment.split(" ")[0], "groupe_age": groupe}))
-        st.markdown("Les segments vont de **0 %** à **95 %** d'utilisateurs en stress élevé. Dans un même segment de temps, l'âge change fortement le résultat : en S4, **17 %** chez les 13–17 ans contre **51 %** chez les 55–65 ans.")
+        st.markdown("""
+- Les segments vont de **0 %** à **95 %** d'utilisateurs en stress élevé.
+- Dans un même segment de temps, l'âge change fortement le résultat : en S4 (188 à 240 min), **17 %** de stress élevé chez les 13–17 ans contre **51 %** chez les 55–65 ans.
+""")
         chiffres(R["segments"].rename_axis(["âge", "segment"]), titre="Voir les 24 segments en chiffres")
         retenir("Une segmentation simple (temps passé × âge), applicable à tous les utilisateurs et sans donnée de santé, qui apporte plus qu'un simple classement par temps passé.")
 
     with onglet_criteres:
-        st.subheader("Nos critères d'une bonne segmentation, vérifiés sur les données")
+        st.subheader("Nos critères d'une bonne segmentation, vérifiés sur les données", anchor=False)
+        st.markdown("Personne ne nous a dit ce qu'est une bonne segmentation : nous fixons nos propres critères, tous **vérifiables sur les données**.")
         st.table(R["criteres"])
-        retenir("Les six critères sont atteints : la segmentation est discriminante, utile au-delà du temps passé, applicable à tous, stable, sans risque d'isoler quelqu'un et sans donnée de santé.")
+        retenir("Les six critères sont atteints, tous vérifiés sur les données.")
 
     with onglet_profils:
-        st.subheader("Quatre profils de bien-être selon le segment")
-        st.caption("Stress élevé à partir de 27 sur 40 · bonheur élevé à partir de 7 sur 10.")
+        st.subheader("Quatre profils de bien-être selon le segment", anchor=False)
+        st.caption("On croise le stress (élevé à partir de 27 sur 40) et le bonheur (élevé à partir de 7 sur 10).")
         parts = R["profils"].reset_index().melt(id_vars="segment", var_name="profil", value_name="part")
         parts["court"] = segment_vers_court(parts["segment"])
         parts["ordre"] = parts["profil"].map({p: i for i, p in enumerate(PROFILS)})
@@ -1163,42 +1242,48 @@ La consigne propose deux voies : **prédire un indicateur de bien-être** à par
         etiquettes = base.mark_text(fontSize=12).encode(
             y="milieu:Q", text="etiquette:N",
             color=alt.condition(f"datum.profil == '{PROFILS[0]}'", alt.value(INK), alt.value("white"))).transform_filter("datum.part >= 12")
-        montrer((empile + etiquettes).properties(title=titre("Plus le temps passé augmente, plus le bien-être se dégrade",
-                                                             "Répartition des quatre profils de bien-être par segment"), height=390))
-        st.markdown("En S1, près de **quatre utilisateurs sur cinq** sont sereins et heureux ; en S6, près des **trois quarts** sont stressés et peu heureux. Entre les deux, on passe par « serein mais peu heureux », puis « stressé mais heureux ».")
-        conclusion_produit("Ces profils décrivent le parcours du bien-être selon la dose d'usage. On ne les attribue pas à un utilisateur, puisqu'ils reposent sur des données de santé du panel.")
+        montrer((empile + etiquettes).properties(title=titre("Répartition des quatre profils de bien-être par segment",
+                                                             "Part des utilisateurs de chaque profil, du segment S1 au segment S6"), height=390))
+        st.markdown("""
+- En S1, près de **quatre utilisateurs sur cinq** sont sereins et heureux.
+- En S6, près des **trois quarts** sont stressés et peu heureux.
+- Entre les deux, on passe d'abord par « serein mais peu heureux », puis par « stressé mais heureux ».
+""")
+        conclusion_produit("Ces profils décrivent le parcours du bien-être selon la dose d'usage. Ils restent une lecture des résultats agrégés : on ne les attribue pas à un utilisateur, puisqu'ils reposent sur des données de santé du panel.")
         retenir("Plus la dose d'usage augmente, plus les utilisateurs glissent d'un profil serein et heureux vers un profil stressé et peu heureux.")
 
 
 def page_protection():
-    entete("7 · Protection des données", "Notre position pour les utilisateurs de l'Union européenne et du Royaume-Uni, y compris les moins de 18 ans.")
-    st.header("Sur quelles variables les segments peuvent-ils reposer pour du ciblage ?")
+    entete("protection-des-donnees")
+    st.subheader("7.1 Sur quelles variables les segments peuvent-ils reposer pour du ciblage ?", anchor=False)
     st.markdown("""
-**Uniquement le temps passé par jour et l'âge**, deux données qu'Instagram détient pour tous ses utilisateurs et qui ne sont pas des données de santé.
-- **Exclues :** les variables de santé et de bien-être (stress, bonheur, sommeil, IMC, tension, tabac, alcool, alimentation, sport), données sensibles au sens de l'article 9 du RGPD ([CNIL](https://www.cnil.fr/fr/definition/donnee-sensible)) et collectées seulement pour l'étude bien-être.
-- **Exclues aussi :** les autres variables de profil (genre, revenu, emploi, couple, enfants, pays), qui n'apportent rien : le RGPD demande de ne traiter que les données nécessaires.
+**Uniquement le temps passé par jour et l'âge.**
+- Ce sont des données qu'Instagram détient **pour tous ses utilisateurs**, et ce ne sont **pas des données de santé**.
+- **Les variables de santé et de bien-être sont exclues** (stress, bonheur, sommeil, IMC, tension, tabac, alcool, alimentation, sport) : ce sont des données sensibles au sens de l'article 9 du RGPD ([CNIL](https://www.cnil.fr/fr/definition/donnee-sensible)), données seulement pour l'étude bien-être.
+- **Les autres variables de profil sont exclues aussi** (genre, revenu, emploi, couple, enfants, pays) : elles n'apportent rien, et le RGPD demande de ne traiter que les données nécessaires.
 """)
-    st.header("Un segment peut-il révéler quelque chose sur la santé ?")
+    st.subheader("7.2 Placer un utilisateur dans un segment peut-il révéler quelque chose sur sa santé ?", anchor=False)
     groupe_max, segment_max = R["segment_max"]
     nb, total, part = R["revelateurs"]
-    indicateurs(("Segment le plus révélateur", f"{segment_max.split(' ')[0]} · {groupe_max}", f"{fr(R['part_max'], 0)} % de ses membres en stress élevé"),
+    indicateurs(("Segment le plus révélateur", f"{segment_max.split(' ')[0]} · {groupe_max}", segment_max),
                 ("Part en stress élevé dans ce segment", f"{fr(R['part_max'], 0)} %", None),
                 ("Segments à 80 % de stress élevé ou plus", f"{nb} sur {total}", f"{fr(part, 0)} % des utilisateurs"))
     st.markdown("""
-**Oui.** Même construits sans donnée de santé, certains segments laissent deviner un état de stress. Une donnée qui révèle indirectement un état de santé doit être traitée comme une donnée de santé, d'où trois conditions :
+**Oui.** Même construits sans donnée de santé, certains segments laissent deviner un état de stress avec une forte probabilité. Une donnée qui révèle indirectement un état de santé doit être traitée comme une donnée de santé. D'où trois conditions :
 - **nommer les segments par l'usage** (« S6 Très intensif, 55–65 ans »), jamais par le stress attendu ;
 - **ne stocker aucun score de stress** par utilisateur ;
 - **réserver les segments aux outils de protection** (rappels de temps, mode sommeil), sans publicité.
 """)
-    st.header("Les mineurs")
+    st.subheader("7.3 Les mineurs", anchor=False)
     st.markdown("""
 - **Royaume-Uni :** le code de conception adapté à l'âge de l'ICO demande que **le profilage des enfants soit désactivé par défaut**, sauf raison impérieuse dans leur intérêt ([résumé par RPC](https://www.rpclegal.com/snapshots/data-protection/ico-age-appropriate-design-code-for-information-society-services/)).
 - **Union européenne :** le DSA (article 28) **interdit les publicités fondées sur le profilage** d'un utilisateur dont la plateforme sait qu'il est mineur ([EUR-Lex](https://eur-lex.europa.eu/eli/reg/2022/2065/oj)).
 """)
-    st.header("Les mesures que nous appliquons et recommandons")
+    st.subheader("7.4 Les mesures que nous appliquons et recommandons", anchor=False)
     st.markdown("""
-- **Seuil de 100 utilisateurs :** aucune ligne individuelle ni aucun groupe de moins de 100 personnes n'est affiché.
-- **Données brutes jamais publiées :** le dossier `data/` est exclu du dépôt du projet par `.gitignore` ; seule la copie qui sert à l'application en ligne se trouve dans un dépôt privé.
+- **Seuil de 100 utilisateurs :** aucune ligne individuelle ni aucun groupe de moins de 100 personnes n'est affiché (vérification ci-dessous).
+- **Données brutes jamais publiées :** le dossier `data/` est exclu du dépôt du projet par le fichier `.gitignore` ; seule la copie qui sert à l'application en ligne se trouve dans un dépôt privé.
+- **Des parties dédiées aux limites et à la protection des données**, dans le notebook, l'application et le README.
 - **Interdiction écrite** d'utiliser les segments pour la publicité ou de les transmettre aux annonceurs.
 - **Informer les utilisateurs** du classement en segments, dans la politique de confidentialité.
 - **Inscrire le traitement au registre des traitements**, avec sa finalité, les données utilisées et la durée de conservation.
@@ -1207,16 +1292,17 @@ def page_protection():
 
 
 def page_limites():
-    entete("8 · Limites", "Ce que nos données ne permettent pas d'affirmer.")
-    st.header("Pas de cause à effet")
-    st.markdown("Tous nos liens sont des **corrélations** : les personnes stressées pourraient aussi passer plus de temps sur l'application. Seules des expériences, où l'on fait varier le temps passé, peuvent tester une cause.")
-    st.header("Un panel de volontaires")
-    st.markdown("Le stress et le bonheur ne sont mesurés que chez les **volontaires** de l'étude bien-être, qui ne ressemblent pas forcément à l'ensemble des utilisateurs.")
-    st.header("Une réplique synthétique")
+    entete("limites")
+    st.subheader("8.1 Pas de cause à effet", anchor=False)
+    st.markdown("Tous nos liens sont des **corrélations**. On ne peut pas dire qu'Instagram *cause* le stress : les personnes stressées pourraient aussi passer plus de temps sur l'application. Seules des expériences, où l'on fait varier le temps passé, peuvent tester une cause.")
+    st.subheader("8.2 Un panel de volontaires", anchor=False)
+    st.markdown("Le stress et le bonheur ne sont mesurés que chez les **volontaires** de l'étude bien-être. Ils ne ressemblent pas forcément à l'ensemble des utilisateurs.")
+    st.subheader("8.3 Une réplique synthétique", anchor=False)
     st.markdown("""
 - **Le lien entre temps passé et stress est très fort** : 71 % des écarts expliqués, contre 0,4 % au maximum dans les études réelles ([Orben & Przybylski, 2019](https://www.oii.ox.ac.uk/technology-use-explains-at-most-0-4-of-adolescent-wellbeing/)).
-- **Des effets connus sont absents** : le sommeil et le sport n'ont aucun lien ici, alors que nos sources les associent au bien-être.
-- **Les deux versions du fichier sont presque identiques**, et le nettoyage de l'une n'est pas documenté ; **27 % des lignes** ont au moins une incohérence métier.
+- **Des effets connus sont absents** : le sommeil, les pas et le sport n'ont aucun lien ici, alors que nos sources associent le sommeil et l'activité physique au bien-être (partie 1).
+- **Les deux versions du fichier (« usage » et « users ») sont presque identiques**, et le nettoyage de l'une n'est pas documenté (partie 0).
+- **26 % des lignes ont au moins une incohérence métier** : elles sont signalées, et les résultats ne changent pas sans elles (partie 0).
 - **Un lien caché, très probablement artificiel, entre stress et bonheur :**
 """)
     indicateurs(("Corrélation stress ↔ bonheur, sur tous les utilisateurs", fr(R["corr_globale"], 2), None),
@@ -1225,43 +1311,46 @@ def page_limites():
     cache["etiquette"] = cache["stress_moyen"].map(fr)
     cache["n_txt"] = cache["n"].map(lambda v: fr(v, 0))
     montrer(barres_simples(cache, "niveau_bonheur", "stress_moyen", "etiquette",
-                           titre("À temps égal, les plus heureux sont aussi les plus stressés",
+                           titre("Dans un même segment de temps, les plus heureux sont aussi les plus stressés",
                                  "Stress moyen selon le bonheur, dans le segment S3 (88 à 188 min par jour)"),
                            "Bonheur déclaré (1–10)", "Stress moyen (0–40)", ["1–2", "3–4", "5–6", "7–8", "9–10"], [0, 25],
                            [alt.Tooltip("niveau_bonheur:N", title="Bonheur"), alt.Tooltip("etiquette:N", title="Stress moyen"),
                             alt.Tooltip("n_txt:N", title="Utilisateurs")], couleur=MUTED))
-    st.markdown("Dans la réalité, on s'attend plutôt à ce que les personnes stressées soient moins heureuses : **c'est très probablement un effet de la génération des données**. Ce lien ne sert pas à la segmentation.")
-    st.header("Autres points de prudence")
+    st.markdown("""
+- Sur l'ensemble des utilisateurs, stress et bonheur **ne sont pas liés**. Mais **à temps passé égal**, ils sont **fortement liés, dans le même sens** : les deux effets se compensent, car le temps passé fait monter le stress et baisser le bonheur.
+- **C'est très probablement un effet de la génération des données** : dans la réalité, on s'attend plutôt à ce que les personnes stressées soient moins heureuses. Ce lien ne sert pas à la segmentation.
+""")
+    st.subheader("8.4 Autres points de prudence", anchor=False)
     st.markdown("""
 - **Le seuil de stress élevé (27)** est une convention de lecture de l'échelle PSS-10, pas un seuil de diagnostic.
-- **Les colonnes « story privée » et « partages » n'existent pas** : l'activité privée n'est mesurée que par les messages.
+- **Les colonnes « story privée » et « partages » n'existent pas** : l'activité privée n'est mesurée que par les messages (partie 4.3).
 """)
     retenir("Nos résultats décrivent des tendances fortes dans une réplique synthétique. Ils indiquent où regarder, mais doivent être confirmés sur de vraies données, et ne permettent jamais de conclure à une cause.")
 
 
 def page_conclusion():
-    entete("9 · Conclusion et recommandations", "Ce qu'il faut retenir, et ce que les équipes produit peuvent en faire.")
-    st.header("Le lien entre l'usage d'Instagram et le bien-être")
+    entete("conclusion")
+    st.subheader("Le lien entre l'usage d'Instagram et le bien-être", anchor=False)
     st.markdown("""
 - **Le temps passé chaque jour est le facteur central.** Il explique **71 %** des écarts de stress (environ +5,4 points par heure) et **16 %** des écarts de bonheur, qui chute surtout aux deux extrêmes.
 - **L'âge change ce lien.** Les plus jeunes passent plus de temps sur Instagram, mais à temps égal, les plus âgés sont plus stressés (+1,2 point par tranche de 10 ans).
-- **Les moins heureux et les plus stressés ont un usage plus intensif** : plus de temps passé, plus d'actions, plus de publications, une activité plus publique et des connexions plus fréquentes.
+- **Les habitudes d'utilisation vont dans le même sens** : les moins heureux et les plus stressés ont un usage plus intensif (plus d'actions, plus de publications, une activité plus publique, des connexions plus fréquentes) et passent plus de temps sur l'application.
 - **Le sommeil, l'activité physique et le pays ne sont pas liés** à l'usage dans notre panel.
 - **Stress et bonheur sont deux indicateurs distincts**, à suivre séparément.
 """)
-    st.header("Une segmentation utilisable par les équipes produit")
-    st.markdown("**Six segments de temps passé (S1 à S6) croisés avec quatre groupes d'âge** : deux informations connues pour tous les utilisateurs, sans donnée de santé. La carte des segments désigne directement les groupes à accompagner en priorité, et le simulateur (partie 6) place n'importe quel nouvel utilisateur.")
-    st.header("Recommandations")
+    st.subheader("Une segmentation utilisable par les équipes produit", anchor=False)
+    st.markdown("**Six segments de temps passé (S1 à S6) croisés avec quatre groupes d'âge** : deux informations connues pour tous les utilisateurs, sans donnée de santé. La carte des segments désigne directement les groupes à accompagner en priorité, et le simulateur (partie 6.2) place n'importe quel nouvel utilisateur.")
+    st.subheader("Recommandations", anchor=False)
     st.markdown("""
-1. **Un rappel de temps quotidien cumulé, avec un seuil selon l'âge.** Dès le segment S3 (88 à 188 min par jour), 15 % des 55–65 ans sont en stress élevé, contre 2 % des 13–17 ans, qui ne dépassent 15 % qu'en S4. Nous recommandons un rappel **à l'entrée de S3 (environ 1 h 30 par jour) pour les 55–65 ans** et **à l'entrée de S4 (environ 3 h) pour les autres**, **activé par défaut pour les mineurs**, qui compte le temps **de toute la journée**.
-2. **Faire du temps quotidien passé l'indicateur de suivi numéro un**, par segment, plutôt que les compteurs d'activité ou le score d'engagement ; dans les études bien-être, **suivre le stress et le bonheur séparément**.
-3. **Réserver les segments aux outils de protection** (rappels, mode sommeil) : jamais de publicité, des segments nommés par l'usage, et une analyse d'impact sur la protection des données avant tout déploiement.
+1. **Un rappel de temps quotidien cumulé, avec un seuil selon l'âge.** Dès le segment S3 (88 à 188 min par jour), 15 % des 55–65 ans sont en stress élevé, contre 2 % des 13–17 ans, qui ne dépassent 15 % qu'en S4. Nous recommandons un rappel **à l'entrée de S3 (environ 1 h 30 par jour) pour les 55–65 ans** et **à l'entrée de S4 (environ 3 h) pour les autres**, **activé par défaut pour les mineurs**. Le rappel compte le temps **de toute la journée**, pas celui d'une seule session (partie 4.4).
+2. **Faire du temps quotidien passé l'indicateur de suivi numéro un**, par segment, dans les tableaux de bord produit, plutôt que les compteurs d'activité ou le score d'engagement ; dans les études bien-être, **suivre le stress et le bonheur séparément**.
+3. **Réserver les segments aux outils de protection** (rappels, mode sommeil) : jamais de publicité, des segments nommés par l'usage et non par le stress, et une analyse d'impact sur la protection des données avant tout déploiement.
 """)
-    encadre("En une phrase", "Plus on passe de temps sur Instagram, plus on est stressé, et ce lien est plus fort chez les plus âgés ; une segmentation simple par temps passé et âge permet aux équipes produit de cibler leurs outils de protection, sans utiliser de données de santé.")
+    encadre("En une phrase", "Plus on passe de temps sur Instagram, plus on est stressé, et ce lien est plus fort chez les plus âgés ; une segmentation simple par temps passé et âge permet aux équipes produit de cibler leurs outils de protection, sans utiliser de données de santé.", style="fort")
 
 
 def page_sources():
-    entete("Sources", "Les références citées dans l'analyse.")
+    entete("sources")
     st.markdown("""
 **Définitions**
 - OMS : [constitution de l'Organisation mondiale de la santé](https://www.who.int/fr/about/governance/constitution)
@@ -1285,25 +1374,34 @@ def page_sources():
 """)
 
 
-PAGES = {
-    "Introduction": page_introduction,
-    "0 · Nettoyage et données": page_donnees,
-    "1 · Hypothèses non concluantes": page_hypotheses,
-    "2 · Temps passé": page_temps,
-    "3 · Âge": page_age,
-    "4 · Habitudes d'utilisation": page_habitudes,
-    "5 · Stress et bonheur": page_stress_bonheur,
-    "6 · Segmentation": page_segmentation,
-    "7 · Protection des données": page_protection,
-    "8 · Limites": page_limites,
-    "9 · Conclusion et recommandations": page_conclusion,
-    "Sources": page_sources,
-}
+# ---------------------------------------------------------------------------
+# Navigation
+# ---------------------------------------------------------------------------
+PAGE_PAR_DEFAUT = "introduction"
+FONCTIONS = {"introduction": page_introduction, "donnees": page_donnees, "hypotheses": page_hypotheses,
+             "temps-passe": page_temps, "age": page_age, "habitudes": page_habitudes, "stress-et-bonheur": page_stress_bonheur,
+             "segmentation": page_segmentation, "protection-des-donnees": page_protection, "limites": page_limites,
+             "conclusion": page_conclusion, "sources": page_sources}
+pages = {}
+for adresse, rubrique, libelle, *_, icone in PARTIES:
+    pages.setdefault(rubrique, []).append(st.Page(FONCTIONS[adresse], title=libelle, icon=icone, url_path=adresse,
+                                                  default=adresse == PAGE_PAR_DEFAUT))
+ordre = [page for liste in pages.values() for page in liste]
+selection = st.navigation(pages)
 
 with st.sidebar:
-    st.markdown("### Rush 4 · Instagram et bien-être")
-    choix_page = st.radio("Parties", list(PAGES), label_visibility="collapsed")
-    st.divider()
-    st.caption(f"{fr(R['n'], 0)} utilisateurs synthétiques · résultats agrégés uniquement, aucun groupe de moins de {MIN_N} utilisateurs.")
+    st.caption(f"Rush 4 · Bootcamp Data · Epitech  \n{fr(R['n'], 0)} utilisateurs synthétiques · résultats agrégés uniquement, "
+               f"aucun groupe de moins de {MIN_N} utilisateurs.")
 
-PAGES[choix_page]()
+selection.run()
+
+position = next(i for i, page in enumerate(ordre) if page.title == selection.title)
+st.divider()
+with st.container(key="navigation_bas"):
+    precedente, suivante = st.columns(2)
+    if position > 0:
+        with precedente:
+            st.page_link(ordre[position - 1], label=ordre[position - 1].title, icon=":material/arrow_back:")
+    if position < len(ordre) - 1:
+        with suivante.container(key="suivante"):
+            st.page_link(ordre[position + 1], label=ordre[position + 1].title, icon=":material/arrow_forward:")
