@@ -1,6 +1,7 @@
-# Bibliothèques nécessaires au notebook et à l'application
-pandas
-numpy
-matplotlib
-streamlit
-jupyter
+# Bibliothèques nécessaires au notebook et à l'application (versions minimales, celles avec lesquelles le projet a été testé)
+pandas>=2.3
+numpy>=2.0
+matplotlib>=3.9
+altair>=5.5
+streamlit>=1.50
+jupyter>=1.1
