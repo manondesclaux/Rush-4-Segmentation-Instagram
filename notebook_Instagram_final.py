@@ -313,6 +313,36 @@ def part_expliquee(data, y, cles):
     return 1 - ((data[y] - moyenne_groupe) ** 2).sum() / ((data[y] - data[y].mean()) ** 2).sum()
 
 
+def decoupage_optimal(data, k=6):
+    """Meilleur découpage du temps passé en k paliers d'au moins MIN_N utilisateurs : celui qui rend les utilisateurs
+    d'un même palier les plus semblables en stress et en bonheur (écarts ramenés à la variance de chaque indicateur).
+    Calcul exact par programmation dynamique, sans tirage aléatoire ; renvoie les k − 1 seuils en minutes."""
+    par_minute = (data.assign(n=1, s2=data[STRESS] ** 2, b2=data[BONHEUR] ** 2)
+                  .groupby(TEMPS)[["n", STRESS, BONHEUR, "s2", "b2"]].sum())
+    minutes = par_minute.index.to_numpy()
+    cumul = {nom: np.concatenate([[0.0], par_minute[nom].to_numpy(dtype=float).cumsum()]) for nom in par_minute.columns}
+    var_stress, var_bonheur = data[STRESS].var(), data[BONHEUR].var()
+    m = len(minutes)
+    cout = np.full((k + 1, m + 1), np.inf)
+    cout[0, 0] = 0.0
+    debut = np.zeros((k + 1, m + 1), dtype=int)
+    for palier in range(1, k + 1):
+        for j in range(palier, m + 1):
+            i = np.arange(palier - 1, j)
+            n = cumul["n"][j] - cumul["n"][i]
+            diviseur = np.maximum(n, 1)
+            ecarts = (((cumul["s2"][j] - cumul["s2"][i]) - (cumul[STRESS][j] - cumul[STRESS][i]) ** 2 / diviseur) / var_stress
+                      + ((cumul["b2"][j] - cumul["b2"][i]) - (cumul[BONHEUR][j] - cumul[BONHEUR][i]) ** 2 / diviseur) / var_bonheur)
+            total = np.where(n >= MIN_N, cout[palier - 1, i] + ecarts, np.inf)
+            meilleur = int(np.argmin(total))
+            cout[palier, j], debut[palier, j] = total[meilleur], i[meilleur]
+    coupes, j = [], m
+    for palier in range(k, 0, -1):
+        j = debut[palier, j]
+        coupes.append(j)
+    return [int(minutes[c]) for c in sorted(coupes) if c > 0]
+
+
 def a_temps_egal(data, colonne, groupes="tranche_10min"):
     """Valeur ramenée à temps passé égal : écart à la moyenne de la même tranche de 10 min, plus la moyenne générale."""
     return data[colonne] - data.groupby(groupes)[colonne].transform("mean") + data[colonne].mean()
@@ -415,8 +445,19 @@ def calculer():
         part_expliquee(df, STRESS, ["segment", "groupe_age"]) * 100,
     ]}, index=["temps passé, par tranches de 10 min (référence)", "6 segments de temps passé (S1 à S6)",
                "6 segments × 4 groupes d'âge (notre segmentation)"])
-    niveaux = pd.cut(df[STRESS], [-1, 13, 26, 40], labels=["faible (0–13)", "modéré (14–26)", "élevé (27–40)"])
-    r["niveaux"] = niveaux.value_counts(normalize=True).mul(100).sort_index().to_frame("part (%)").rename_axis("niveau")
+    base_paliers = pd.DataFrame({STRESS: df[STRESS], BONHEUR: df[BONHEUR], "eleve": df["stress_eleve"].astype(float)})
+
+    def qualite_paliers(seuils):
+        base_paliers["palier"] = pd.cut(df[TEMPS], [0, *seuils, np.inf], right=False)
+        return [part_expliquee(base_paliers, colonne, "palier") * 100 for colonne in (STRESS, BONHEUR, "eleve")]
+
+    nos_seuils = [int(s) for s in BORNES_SEGMENTS[1:-1]]
+    seuils_optimaux = decoupage_optimal(df[[TEMPS, STRESS, BONHEUR]])
+    r["decoupages"] = pd.DataFrame(
+        [[" · ".join(map(str, nos_seuils)), *qualite_paliers(nos_seuils)],
+         [" · ".join(map(str, seuils_optimaux)), *qualite_paliers(seuils_optimaux)]],
+        index=["nos 6 paliers", "meilleur découpage en 6 paliers"],
+        columns=["seuils (min)", "stress expliqué (%)", "bonheur expliqué (%)", "stress élevé expliqué (%)"]).rename_axis("découpage")
 
     # --- 1. Hypothèses non concluantes
     r["sommeil"] = agreger(df, "segment", sommeil_moyen=("sleep_hours_per_night", "mean"),
@@ -711,7 +752,7 @@ def page_donnees():
     with onglet_variables:
         st.subheader("Les variables construites", anchor=False)
         st.markdown("""
-- **Six segments de temps passé** (S1 à S6), dont les seuils séparent les niveaux de stress et de bonheur : moins de 20 min, 20–88 min, 88–188 min, 188–240 min, 240–290 min, plus de 290 min.
+- **Six segments de temps passé** (S1 à S6) : moins de 20 min, 20–88 min, 88–188 min, 188–240 min, 240–290 min, plus de 290 min (choix des seuils justifié ci-dessous).
 - **Quatre groupes d'âge** (13–17, 18–34, 35–54, 55–65 ans) : les mineurs à part, pour des raisons légales.
 - **Un indicateur « stress élevé »** (27 ou plus sur 40).
 """)
@@ -724,6 +765,11 @@ def page_donnees():
             tooltip=[alt.Tooltip("decoupage:N", title="Découpage"), alt.Tooltip("etiquette:N", title="Part expliquée")])
                  + base.mark_text(align="left", dx=6, fontSize=12, color=INK).encode(text="etiquette:N")).properties(
             title=titre("Six segments suffisent", "Part des écarts de stress expliquée par chaque découpage"), height=170))
+        decoupages = R["decoupages"]
+        ecart_stress = decoupages.iloc[1]["stress expliqué (%)"] - decoupages.iloc[0]["stress expliqué (%)"]
+        st.markdown("**Pourquoi ces seuils ?** Nous les comparons au meilleur découpage possible en 6 paliers, calculé sur les données : celui qui rend les utilisateurs d'un même palier les plus semblables en stress et en bonheur.")
+        tableau(decoupages)
+        st.markdown(f"Nos seuils sont **presque optimaux** : le meilleur découpage n'explique que {fr(ecart_stress)} point{'s' if round(ecart_stress, 1) >= 2 else ''} de stress en plus, et sépare un peu moins bien les utilisateurs en stress élevé. Nous gardons nos seuils : ceux de 20 min et 290 min (4 h 50) isolent les deux chutes du bonheur, et celui de 188 min coupe les utilisateurs en deux moitiés.")
 
     retenir("Le fichier est complet et sans doublon ; les incohérences sont signalées sans changer les résultats ; les six segments de temps conservent presque toute l'information du temps passé (68 % des écarts de stress expliqués, contre 71 % avec le temps à 10 minutes près).")
 
