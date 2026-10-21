@@ -17,7 +17,7 @@ Bootcamp Data · Epitech
 |---|---|
 | `notebook_Instagram_final.ipynb` | Le notebook complet : choix des données, exploration, variables construites, segmentation, évaluation selon nos critères, limites et protection des données. Il s'exécute de bout en bout et produit des résultats identiques à chaque exécution. |
 | `notebook_Instagram_final.py` | La même analyse en application Streamlit interactive, avec un simulateur qui place un nouvel utilisateur dans son segment. |
-| `soutenance_rush4.pdf` | Les diapositives de la soutenance : hypothèses non concluantes puis concluantes, segmentation retenue, protection des données, limites et recommandations. |
+| `soutenance_rush4.pptx` | Les diapositives de la soutenance : hypothèses non concluantes puis concluantes, segmentation retenue, protection des données, limites et recommandations. |
 
 **Application en ligne :** [notebookinstagramfinal.streamlit.app](https://notebookinstagramfinal.streamlit.app)
 
@@ -35,7 +35,7 @@ Bootcamp Data · Epitech
 .
 ├── notebook_Instagram_final.ipynb   notebook complet (livrable principal)
 ├── notebook_Instagram_final.py      application Streamlit
-├── soutenance_rush4.pdf             diapositives de la soutenance
+├── soutenance_rush4.pptx            diapositives de la soutenance
 ├── requirements.txt                 bibliothèques nécessaires (versions minimales)
 ├── .streamlit/config.toml           thème de l'application
 └── data/                            extraits CSV (non versionnés, à ajouter)
