@@ -86,7 +86,7 @@ L'application s'ouvre dans le navigateur à l'adresse `http://localhost:8501`.
 |---|---|
 | Jordy | Travail commun |
 | Manon D. | Travail commun · oral |
-| Manon R. | Travail commun · application Streamlit |
+| Manon R. | Travail commun · application Streamlit · présentation finale |
 | Mina | Travail commun · présentation finale |
 | Tom | Travail commun |
 
