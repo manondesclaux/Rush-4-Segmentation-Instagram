@@ -1,4 +1,4 @@
-# Rush 4 — Segmentation des utilisateurs d'Instagram : usage et bien-être
+# Rush 4 - Segmentation des utilisateurs d'Instagram : usage et bien-être
 
 Bootcamp Data · Epitech
 
